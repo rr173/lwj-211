@@ -4,13 +4,12 @@ export const PRESET_PATTERNS = {
   glider: {
     name: '滑翔机',
     cells: [
-      [0, 0, 1],
-      [1, 1, 1],
-      [2, 2, 0],
+      [1, 0],
+      [2, 1],
       [0, 2],
       [1, 2],
       [2, 2]
-    ].map(([x, y]) => [x, y])
+    ]
   },
   gliderGun: {
     name: 'Gosper滑翔机枪',
