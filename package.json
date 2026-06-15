@@ -1,0 +1,14 @@
+{
+  "name": "cellular-automata-sandbox",
+  "version": "1.0.0",
+  "description": "浏览器端细胞自动机沙盒模拟器",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

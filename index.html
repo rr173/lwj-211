@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>细胞自动机沙盒模拟器</title>
+  <link rel="stylesheet" href="/src/styles/main.css">
+</head>
+<body>
+  <div id="app">
+    <div id="left-panel" class="panel">
+      <div class="panel-header">
+        <h3>规则与群落</h3>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">碰撞策略</div>
+        <select id="collision-strategy">
+          <option value="priority">优先级模式</option>
+          <option value="competition">竞争模式</option>
+          <option value="peace">和平模式</option>
+        </select>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">快速创建规则</div>
+        <div class="input-row">
+          <input type="text" id="quick-rule-input" placeholder="B3/S23 Moore">
+          <button id="quick-rule-btn">创建</button>
+        </div>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">自定义规则</div>
+        <div class="rule-form">
+          <div class="form-row">
+            <label>名称</label>
+            <input type="text" id="rule-name" placeholder="规则名">
+          </div>
+          <div class="form-row">
+            <label>颜色</label>
+            <input type="color" id="rule-color" value="#4fc3f7">
+          </div>
+          <div class="form-row">
+            <label>B/S记法</label>
+            <input type="text" id="rule-bs" placeholder="B3/S23">
+          </div>
+          <div class="form-row">
+            <label>邻域类型</label>
+            <select id="rule-neighborhood">
+              <option value="moore">Moore (八邻域)</option>
+              <option value="vonneumann">Von Neumann (四邻域)</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>优先级</label>
+            <input type="number" id="rule-priority" value="0" min="0">
+          </div>
+          <button id="add-rule-btn" class="primary-btn">添加规则</button>
+        </div>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">群落列表</div>
+        <div id="colony-list"></div>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">预置图案</div>
+        <div class="pattern-buttons">
+          <button class="pattern-btn" data-pattern="glider">滑翔机</button>
+          <button class="pattern-btn" data-pattern="gliderGun">滑翔机枪</button>
+          <button class="pattern-btn" data-pattern="pulsar">脉冲星</button>
+          <button class="pattern-btn" data-pattern="spaceship">太空船</button>
+        </div>
+        <div id="selected-pattern-info" class="hint"></div>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">RLE导入</div>
+        <textarea id="rle-input" placeholder="粘贴RLE格式图案"></textarea>
+        <button id="import-rle-btn">导入RLE</button>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">数据</div>
+        <button id="export-json-btn">导出JSON</button>
+        <input type="file" id="import-json-file" accept=".json" style="display:none">
+        <button id="import-json-btn">导入JSON</button>
+      </div>
+    </div>
+
+    <div id="canvas-container">
+      <canvas id="grid-canvas"></canvas>
+      <div id="status-bar">
+        <span id="zoom-info">缩放: 1x</span>
+        <span id="center-info">中心: (0, 0)</span>
+        <span id="cell-count">活细胞: 0</span>
+        <span id="generation-info">代数: 0</span>
+      </div>
+      <div id="controls">
+        <button id="step-btn">单步 (空格)</button>
+        <button id="toggle-run-btn">运行/暂停 (回车)</button>
+        <div class="speed-control">
+          <span>速度:</span>
+          <input type="range" id="speed-slider" min="1" max="100" value="30">
+          <span id="speed-value">30代/秒</span>
+        </div>
+        <button id="reset-btn">重置</button>
+      </div>
+    </div>
+
+    <div id="right-panel" class="panel">
+      <div class="panel-header">
+        <h3>统计面板</h3>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">群落状态</div>
+        <div id="stats-list"></div>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">最近100代趋势</div>
+        <canvas id="chart-canvas" width="280" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
