@@ -4,17 +4,32 @@ import { Colony } from '../core/Colony.js';
 import { parseRLE } from '../engine/PatternManager.js';
 
 export class UIManager {
-  constructor(colonyManager, engine, patternManager, cellStore, viewState) {
+  constructor(colonyManager, engine, patternManager, cellStore, viewState, historyManager = null) {
     this.colonyManager = colonyManager;
     this.engine = engine;
     this.patternManager = patternManager;
     this.cellStore = cellStore;
     this.viewState = viewState;
-    
+    this.historyManager = historyManager;
+
+    this.timelineDragging = false;
+    this.selectedForCompare = new Set();
+
     this.initPresetColonies();
     this.bindUIEvents();
     this.bindEventBus();
     this.updateAll();
+
+    if (this.historyManager) {
+      this.updateBranchList();
+      this.updateTimeline();
+    }
+  }
+
+  setHistoryManager(hm) {
+    this.historyManager = hm;
+    this.updateBranchList();
+    this.updateTimeline();
   }
 
   initPresetColonies() {
@@ -92,20 +107,257 @@ export class UIManager {
       }
       if (e.code === 'Space') {
         e.preventDefault();
+        if (this.historyManager && this.historyManager.compareMode) return;
         this.engine.step();
       } else if (e.code === 'Enter') {
         e.preventDefault();
+        if (this.historyManager && this.historyManager.compareMode) return;
         this.engine.toggleRunning();
       } else if (e.code === 'Escape') {
-        this.patternManager.cancelPlacement();
-        document.querySelectorAll('.pattern-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById('selected-pattern-info').textContent = '';
+        if (this.historyManager && this.historyManager.compareMode) {
+          this.historyManager.exitCompareMode();
+          this.exitCompareModeUI();
+        } else {
+          this.patternManager.cancelPlacement();
+          document.querySelectorAll('.pattern-btn').forEach(b => b.classList.remove('active'));
+          document.getElementById('selected-pattern-info').textContent = '';
+        }
+      } else if (e.code === 'KeyS') {
+        e.preventDefault();
+        if (this.historyManager) {
+          this.historyManager.saveSnapshot(true);
+          this.showToast('快照已保存');
+        }
       }
     });
 
     eventBus.on('mouse:hover', (world) => {
       this.renderer?.setHoverCell?.(world.x, world.y);
     });
+
+    if (this.historyManager) {
+      this._bindTimelineEvents();
+      this._bindBranchListEvents();
+      this._bindSnapshotSettings();
+      this._bindCompareEvents();
+    }
+  }
+
+  _bindTimelineEvents() {
+    const track = document.getElementById('timeline-track');
+    const slider = document.getElementById('timeline-slider');
+    if (!track) return;
+
+    const handleJump = (clientX) => {
+      if (!this.historyManager) return;
+      const rect = track.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const data = this.historyManager.getTimelineData();
+      if (!data) return;
+      const { minGeneration, maxGeneration } = data;
+      const range = Math.max(1, maxGeneration - minGeneration);
+      const targetGen = Math.round(minGeneration + ratio * range);
+      const alignedGen = this._findNearestSnapshotGen(targetGen);
+      if (alignedGen !== null) {
+        this.historyManager.jumpToGeneration(alignedGen);
+      }
+    };
+
+    track.addEventListener('mousedown', (e) => {
+      if (e.target === slider) return;
+      this.timelineDragging = true;
+      handleJump(e.clientX);
+    });
+
+    slider.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      this.timelineDragging = true;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!this.timelineDragging) return;
+      handleJump(e.clientX);
+    });
+
+    window.addEventListener('mouseup', () => {
+      this.timelineDragging = false;
+    });
+  }
+
+  _findNearestSnapshotGen(targetGen) {
+    if (!this.historyManager) return null;
+    const branch = this.historyManager.getCurrentBranch();
+    if (!branch || branch.snapshots.length === 0) return null;
+    const gens = branch.getSnapshotGenerations();
+    let nearest = gens[0];
+    let minDiff = Math.abs(targetGen - nearest);
+    for (const g of gens) {
+      const diff = Math.abs(targetGen - g);
+      if (diff < minDiff) {
+        minDiff = diff;
+        nearest = g;
+      }
+    }
+    return nearest;
+  }
+
+  _bindBranchListEvents() {
+    const container = document.getElementById('branch-list');
+    if (!container) return;
+
+    container.addEventListener('click', (e) => {
+      if (!this.historyManager) return;
+      const deleteBtn = e.target.closest('.branch-delete-btn');
+      const checkbox = e.target.closest('.branch-compare-checkbox input');
+      const item = e.target.closest('.branch-item');
+      if (!item) return;
+
+      if (deleteBtn) {
+        e.stopPropagation();
+        const branchId = item.dataset.id;
+        if (branchId === 'branch_main') {
+          alert('主线分支不能删除');
+          return;
+        }
+        if (confirm(`确定删除分支 "${this.historyManager.getBranch(branchId)?.name}" 吗？`)) {
+          this.selectedForCompare.delete(branchId);
+          this.historyManager.deleteBranch(branchId);
+          this.updateBranchList();
+          this.updateCompareInfo();
+        }
+        return;
+      }
+
+      if (checkbox) {
+        e.stopPropagation();
+        const branchId = item.dataset.id;
+        if (checkbox.checked) {
+          if (this.selectedForCompare.size >= 2) {
+            checkbox.checked = false;
+            this.showToast('最多选择2个分支进行对比');
+            return;
+          }
+          this.selectedForCompare.add(branchId);
+        } else {
+          this.selectedForCompare.delete(branchId);
+        }
+        item.classList.toggle('selected-for-compare', checkbox.checked);
+        this.updateCompareInfo();
+        return;
+      }
+
+      const branchId = item.dataset.id;
+      this.historyManager.switchBranch(branchId);
+      this.updateBranchList();
+    });
+  }
+
+  _bindSnapshotSettings() {
+    const intervalInput = document.getElementById('snapshot-interval');
+    const saveBtn = document.getElementById('save-snapshot-btn');
+    if (intervalInput) {
+      intervalInput.addEventListener('change', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (val >= 1 && val <= 100) {
+          this.historyManager?.setAutoSnapshotInterval(val);
+        }
+      });
+    }
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        this.historyManager?.saveSnapshot(true);
+        this.showToast('快照已保存');
+      });
+    }
+  }
+
+  _bindCompareEvents() {
+    const startBtn = document.getElementById('start-compare-btn');
+    if (startBtn) {
+      startBtn.addEventListener('click', () => {
+        if (this.selectedForCompare.size !== 2) return;
+        const ids = [...this.selectedForCompare];
+        this.historyManager?.enterCompareMode(ids[0], ids[1]);
+      });
+    }
+
+    const stepBtnA = document.getElementById('step-compare-a');
+    const stepBtnB = document.getElementById('step-compare-b');
+    if (stepBtnA) {
+      stepBtnA.addEventListener('click', () => this._stepCompare(0));
+    }
+    if (stepBtnB) {
+      stepBtnB.addEventListener('click', () => this._stepCompare(1));
+    }
+
+    eventBus.on('compare:entered', (data) => this.enterCompareModeUI(data));
+    eventBus.on('compare:exited', () => this.exitCompareModeUI());
+  }
+
+  _stepCompare(index) {
+    if (!this.historyManager) return;
+    const branchId = this.historyManager.compareBranchIds[index];
+    if (!branchId) return;
+    const branch = this.historyManager.getBranch(branchId);
+    if (!branch) return;
+
+    const currentBranchId = this.historyManager.currentBranchId;
+    this.historyManager.switchBranch(branchId);
+    this.engine.step();
+    const latestSnap = branch.snapshots[branch.snapshots.length - 1];
+    this.historyManager.switchBranch(currentBranchId);
+
+    if (this.renderer && this.renderer.renderCompareFrame) {
+      this.renderer.renderCompareFrame(index, branch);
+    }
+  }
+
+  enterCompareModeUI(data) {
+    document.getElementById('canvases-wrapper')?.classList.add('compare-mode');
+    const canvasB = document.getElementById('grid-canvas-b');
+    canvasB?.classList.remove('hidden');
+    document.getElementById('compare-label-a')?.classList.remove('hidden');
+    document.getElementById('compare-label-b')?.classList.remove('hidden');
+    document.getElementById('compare-controls-a')?.classList.remove('hidden');
+    document.getElementById('compare-controls-b')?.classList.remove('hidden');
+
+    const branchA = this.historyManager?.getBranch(data.branches[0]);
+    const branchB = this.historyManager?.getBranch(data.branches[1]);
+    if (branchA) document.getElementById('compare-label-a').textContent = branchA.name;
+    if (branchB) document.getElementById('compare-label-b').textContent = branchB.name;
+
+    document.getElementById('timeline-container')?.classList.add('hidden');
+    document.getElementById('controls')?.classList.add('hidden');
+    document.getElementById('status-bar')?.classList.add('hidden');
+
+    this.showToast('进入对比模式，按 ESC 退出');
+
+    if (this.renderer && this.renderer.enterCompareMode) {
+      this.renderer.enterCompareMode(data.branches);
+    }
+  }
+
+  exitCompareModeUI() {
+    document.getElementById('canvases-wrapper')?.classList.remove('compare-mode');
+    document.getElementById('grid-canvas-b')?.classList.add('hidden');
+    document.getElementById('compare-label-a')?.classList.add('hidden');
+    document.getElementById('compare-label-b')?.classList.add('hidden');
+    document.getElementById('compare-controls-a')?.classList.add('hidden');
+    document.getElementById('compare-controls-b')?.classList.add('hidden');
+    document.getElementById('timeline-container')?.classList.remove('hidden');
+    document.getElementById('controls')?.classList.remove('hidden');
+    document.getElementById('status-bar')?.classList.remove('hidden');
+
+    this.selectedForCompare.clear();
+    this.updateBranchList();
+    this.updateCompareInfo();
+
+    if (this.renderer && this.renderer.exitCompareMode) {
+      this.renderer.exitCompareMode();
+    }
+
+    eventBus.emit('state:updated');
+    eventBus.emit('view:changed');
   }
 
   setRenderer(renderer) {
@@ -131,6 +383,24 @@ export class UIManager {
       btn.classList.toggle('active', running);
     });
     eventBus.on('history:updated', (history) => this.updateChart(history));
+
+    if (this.historyManager) {
+      eventBus.on('timeline:changed', () => this.updateTimeline());
+      eventBus.on('branch:switched', () => this.updateBranchList());
+      eventBus.on('branch:created', () => this.updateBranchList());
+      eventBus.on('branch:deleted', () => this.updateBranchList());
+      eventBus.on('branches:changed', () => this.updateBranchList());
+      eventBus.on('branch:forked', (info) => {
+        this.showToast(`已创建新分支: ${this.historyManager.getBranch(info.to)?.name}`);
+        this.updateBranchList();
+      });
+      eventBus.on('branches:limitReached', (limit) => {
+        alert(`分支数量已达上限（${limit}个），请先删除旧分支`);
+      });
+      eventBus.on('snapshot:saved', () => {
+        this.updateTimeline();
+      });
+    }
   }
 
   addRuleFromForm() {
@@ -434,10 +704,162 @@ export class UIManager {
     ctx.fillText('0', 2, h - padding);
   }
 
+  updateBranchList() {
+    if (!this.historyManager) return;
+    const container = document.getElementById('branch-list');
+    if (!container) return;
+
+    const branches = this.historyManager.getAllBranches();
+    const currentBranch = this.historyManager.getCurrentBranch();
+
+    const compareSection = document.getElementById('branch-compare-section');
+    if (compareSection) {
+      compareSection.style.display = branches.length >= 2 ? 'block' : 'none';
+    }
+
+    if (branches.length === 0) {
+      container.innerHTML = '<div class="empty-hint">暂无分支</div>';
+      return;
+    }
+
+    container.innerHTML = branches.map(branch => {
+      const active = currentBranch && currentBranch.id === branch.id;
+      const isMain = branch.id === 'branch_main';
+      const selected = this.selectedForCompare.has(branch.id);
+      const snapshotCount = branch.snapshots.length;
+      return `
+        <div class="branch-item ${isMain ? 'main' : ''} ${active ? 'active' : ''} ${selected ? 'selected-for-compare' : ''}" 
+             data-id="${branch.id}">
+          <div class="branch-header">
+            <div class="branch-name">
+              <span class="branch-badge">${isMain ? '主线' : '分支'}</span>
+              <span>${this.escapeHtml(branch.name)}</span>
+            </div>
+            <div class="branch-actions">
+              ${!isMain ? `<button class="branch-delete-btn" data-id="${branch.id}" title="删除分支">✕</button>` : ''}
+            </div>
+          </div>
+          <div class="branch-meta">
+            起始代: ${branch.startGeneration} | 当前: ${branch.getLatestGeneration()} | 快照: ${snapshotCount}
+          </div>
+          <div class="branch-compare-checkbox">
+            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;width:100%;">
+              <input type="checkbox" ${selected ? 'checked' : ''} ${isMain && branches.length < 3 ? '' : ''}>
+              <span>加入对比</span>
+            </label>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  updateCompareInfo() {
+    const info = document.getElementById('branch-compare-info');
+    const btn = document.getElementById('start-compare-btn');
+    if (info) {
+      info.textContent = `已选择 ${this.selectedForCompare.size}/2 个分支`;
+    }
+    if (btn) {
+      btn.disabled = this.selectedForCompare.size !== 2;
+    }
+  }
+
+  updateTimeline() {
+    if (!this.historyManager) return;
+    const data = this.historyManager.getTimelineData();
+    if (!data) return;
+
+    const { branchName, currentGeneration, maxGeneration, minGeneration, snapshotGenerations, isBrowsing } = data;
+
+    document.getElementById('timeline-branch-name').textContent = branchName;
+    document.getElementById('timeline-range').textContent = `代 ${minGeneration} - ${maxGeneration}`;
+    document.getElementById('timeline-current').textContent = `当前: ${currentGeneration}${isBrowsing ? ' (历史)' : ''}`;
+
+    const track = document.getElementById('timeline-track');
+    if (!track) return;
+    const trackWidth = track.clientWidth || track.offsetWidth || 1;
+    const range = Math.max(1, maxGeneration - minGeneration);
+    const genToX = (gen) => ((gen - minGeneration) / range) * 100;
+
+    const ticksContainer = document.getElementById('timeline-ticks');
+    const snapshotsContainer = document.getElementById('timeline-snapshots');
+    const indicator = document.getElementById('timeline-indicator');
+    const slider = document.getElementById('timeline-slider');
+
+    const interval = Math.max(1, this.historyManager.autoSnapshotInterval);
+    let html = '';
+    const majorStep = interval * 5;
+    const startTick = Math.ceil(minGeneration / majorStep) * majorStep;
+    for (let gen = startTick; gen <= maxGeneration; gen += majorStep) {
+      const x = genToX(gen);
+      if (x < 0 || x > 100) continue;
+      html += `<div class="timeline-tick major" style="left:${x}%"><div class="timeline-tick-label">${gen}</div></div>`;
+    }
+    const minorStart = Math.ceil(minGeneration / interval) * interval;
+    for (let gen = minorStart; gen <= maxGeneration; gen += interval) {
+      if (gen % majorStep === 0) continue;
+      const x = genToX(gen);
+      if (x < 0 || x > 100) continue;
+      html += `<div class="timeline-tick" style="left:${x}%"></div>`;
+    }
+    ticksContainer.innerHTML = html;
+
+    let snapsHtml = '';
+    for (const gen of snapshotGenerations) {
+      const x = genToX(gen);
+      if (x < 0 || x > 100) continue;
+      snapsHtml += `<div class="timeline-snapshot-dot" style="left:${x}%" title="第 ${gen} 代"></div>`;
+    }
+    snapshotsContainer.innerHTML = snapsHtml;
+
+    const indicatorX = genToX(Math.max(minGeneration, Math.min(maxGeneration, currentGeneration)));
+    indicator.style.left = `${indicatorX}%`;
+    indicator.style.background = isBrowsing ? '#ffb74d' : '#e94560';
+
+    slider.style.left = `${indicatorX}%`;
+    slider.style.display = snapshotGenerations.length > 0 ? 'block' : 'none';
+  }
+
+  showToast(message) {
+    let toast = document.getElementById('app-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'app-toast';
+      toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(233, 69, 96, 0.95);
+        color: #fff;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-size: 13px;
+        z-index: 10000;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      `;
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+      toast.style.opacity = '0';
+    }, 1800);
+  }
+
   updateAll() {
     this.updateColonyList();
     this.updateStatusBar();
     this.updateStatsPanel();
+    if (this.historyManager) {
+      this.updateBranchList();
+      this.updateTimeline();
+      this.updateCompareInfo();
+    }
   }
 
   escapeHtml(str) {

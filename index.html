@@ -81,10 +81,37 @@
         <input type="file" id="import-json-file" accept=".json" style="display:none">
         <button id="import-json-btn">导入JSON</button>
       </div>
+      <div class="panel-section">
+        <div class="section-title">分支管理</div>
+        <div id="snapshot-settings" class="snapshot-settings">
+          <div class="form-row">
+            <label>快照间隔</label>
+            <input type="number" id="snapshot-interval" value="10" min="1" max="100">
+          </div>
+          <button id="save-snapshot-btn" class="primary-btn">保存快照 (S)</button>
+        </div>
+        <div id="branch-list"></div>
+        <div id="branch-compare-section" style="margin-top:10px;display:none;">
+          <div class="section-title">分支对比</div>
+          <div id="branch-compare-info" class="hint">已选择 0/2 个分支</div>
+          <button id="start-compare-btn" disabled>进入对比模式</button>
+        </div>
+      </div>
     </div>
 
     <div id="canvas-container">
-      <canvas id="grid-canvas"></canvas>
+      <div id="canvases-wrapper">
+        <canvas id="grid-canvas"></canvas>
+        <canvas id="grid-canvas-b" class="compare-canvas hidden"></canvas>
+        <div id="compare-label-a" class="compare-label hidden"></div>
+        <div id="compare-label-b" class="compare-label hidden"></div>
+        <div id="compare-controls-a" class="compare-controls hidden">
+          <button id="step-compare-a">单步推进</button>
+        </div>
+        <div id="compare-controls-b" class="compare-controls hidden">
+          <button id="step-compare-b">单步推进</button>
+        </div>
+      </div>
       <div id="status-bar">
         <span id="zoom-info">缩放: 1x</span>
         <span id="center-info">中心: (0, 0)</span>
@@ -100,6 +127,21 @@
           <span id="speed-value">30代/秒</span>
         </div>
         <button id="reset-btn">重置</button>
+      </div>
+      <div id="timeline-container">
+        <div id="timeline">
+          <div id="timeline-track">
+            <div id="timeline-ticks"></div>
+            <div id="timeline-snapshots"></div>
+            <div id="timeline-indicator"></div>
+            <div id="timeline-slider"></div>
+          </div>
+        </div>
+        <div id="timeline-info">
+          <span id="timeline-branch-name">主线</span>
+          <span id="timeline-range">代 0 - 0</span>
+          <span id="timeline-current">当前: 0</span>
+        </div>
       </div>
     </div>
 

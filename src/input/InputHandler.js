@@ -1,12 +1,13 @@
 import { eventBus } from '../core/EventBus.js';
 
 export class InputHandler {
-  constructor(canvas, viewState, cellStore, colonyManager, patternManager) {
+  constructor(canvas, viewState, cellStore, colonyManager, patternManager, historyManager = null) {
     this.canvas = canvas;
     this.viewState = viewState;
     this.cellStore = cellStore;
     this.colonyManager = colonyManager;
     this.patternManager = patternManager;
+    this.historyManager = historyManager;
 
     this.isDragging = false;
     this.isPanning = false;
@@ -15,8 +16,13 @@ export class InputHandler {
     this.lastPanX = 0;
     this.lastPanY = 0;
     this.placingPattern = null;
+    this._forkedOnThisDraw = false;
 
     this.bindEvents();
+  }
+
+  setHistoryManager(hm) {
+    this.historyManager = hm;
   }
 
   bindEvents() {
@@ -56,6 +62,7 @@ export class InputHandler {
     }
 
     if (this.placingPattern && e.button === 0) {
+      this._triggerForkIfNeeded();
       this.patternManager.placePattern(this.placingPattern, world.x, world.y);
       eventBus.emit('pattern:cancel');
       this.placingPattern = null;
@@ -66,6 +73,7 @@ export class InputHandler {
     if (e.button === 0 || e.button === 2) {
       this.isDrawing = true;
       this.drawMode = e.button === 0 ? 'draw' : 'erase';
+      this._forkedOnThisDraw = false;
       this.applyDrawAction(world.x, world.y);
     }
   }
@@ -127,11 +135,24 @@ export class InputHandler {
     const colony = this.colonyManager.getSelected();
     if (!colony) return;
 
+    this._triggerForkIfNeeded();
+
     if (this.drawMode === 'draw') {
       this.cellStore.set(x, y, colony.id);
     } else if (this.drawMode === 'erase') {
       this.cellStore.delete(x, y);
     }
     eventBus.emit('state:updated');
+  }
+
+  _triggerForkIfNeeded() {
+    if (!this.historyManager) return;
+    if (this._forkedOnThisDraw) return;
+    if (!this.historyManager.isBrowsingHistory) return;
+
+    const newBranch = this.historyManager.onEditAfterHistoryJump();
+    if (newBranch) {
+      this._forkedOnThisDraw = true;
+    }
   }
 }

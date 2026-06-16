@@ -15,6 +15,11 @@ export class EvolutionEngine {
     this.animationFrameId = null;
     this.history = [];
     this.maxHistoryLength = 100;
+    this.historyManager = null;
+  }
+
+  setHistoryManager(hm) {
+    this.historyManager = hm;
   }
 
   setSpeed(speed) {
@@ -53,6 +58,19 @@ export class EvolutionEngine {
     this.generation = 0;
     this.history = [];
     this.cellStore.clear();
+
+    if (this.historyManager) {
+      const mainBranch = this.historyManager.branches.get('branch_main');
+      if (mainBranch) {
+        mainBranch.snapshots = [];
+        mainBranch.startGeneration = 0;
+        mainBranch.currentGeneration = 0;
+      }
+      this.historyManager.isBrowsingHistory = false;
+      this.historyManager.browsingGeneration = null;
+      eventBus.emit('timeline:changed', this.historyManager.getTimelineData());
+    }
+
     eventBus.emit('state:updated');
     eventBus.emit('generation:changed', this.generation);
   }
@@ -252,6 +270,11 @@ export class EvolutionEngine {
 
     this.generation++;
     this.recordHistory();
+
+    if (this.historyManager) {
+      this.historyManager.notifyGenerationAdvance();
+      this.historyManager.saveSnapshot(false);
+    }
 
     eventBus.emit('state:updated');
     eventBus.emit('generation:changed', this.generation);
