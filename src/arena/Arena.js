@@ -93,8 +93,11 @@ export class Arena {
     
     this.engine.reset();
     
+    console.log('开始对战，参赛者数量:', this.contestants.length);
+    
     this.contestants.forEach(contestant => {
       const pos = this.getCornerPosition(contestant.corner);
+      console.log(`初始化种群 ${contestant.name} (colonyId=${contestant.colonyId}) 位置: (${pos.x}, ${pos.y})`);
       this.engine.initializePopulation(
         contestant.colonyId,
         pos.x,
@@ -103,6 +106,8 @@ export class Arena {
         0.3
       );
     });
+    
+    console.log('初始种群初始化完成，细胞统计:', Object.fromEntries(this.engine.cellCounts));
     
     this.isRunning = true;
     this.currentMatch = {
@@ -204,7 +209,10 @@ export class Arena {
   }
 
   playNextTournamentMatch() {
+    console.log('playNextTournamentMatch called');
+    
     if (!this.tournamentBracket || this.tournamentBracket.length === 0) {
+      console.log('tournamentBracket 不存在或为空，结束锦标赛');
       this.endTournament();
       return;
     }
@@ -212,22 +220,51 @@ export class Arena {
     const currentRound = this.tournamentBracket[this.tournamentBracket.length - 1];
     const matchIndex = currentRound.results.length;
     
+    console.log(`当前轮次: ${currentRound.round}, matchIndex: ${matchIndex}, 总比赛数: ${currentRound.matches.length}`);
+    
     if (matchIndex >= currentRound.matches.length) {
+      console.log('当前轮次所有比赛已完成，进入下一轮');
       this.advanceTournamentRound();
       return;
     }
     
     const match = currentRound.matches[matchIndex];
+    console.log(`准备开始比赛: ${match.map(id => {
+      const g = this.tournamentGeneLab?.getGene(id);
+      return g?.name || id;
+    }).join(' vs ')}`);
     
     this.clearContestants();
     
+    let addedCount = 0;
     match.forEach((geneId, index) => {
-      const gene = this.tournamentGeneLab.getGene(geneId);
+      const gene = this.tournamentGeneLab?.getGene(geneId);
       if (gene) {
         const colonyId = index;
         this.addContestant(gene, colonyId);
+        addedCount++;
+        console.log(`添加参赛者: ${gene.name}, colonyId=${colonyId}`);
+      } else {
+        console.error(`无法找到基因: ${geneId}`);
       }
     });
+    
+    console.log(`成功添加 ${addedCount} 个参赛者，需要至少2个`);
+    
+    if (addedCount < 2) {
+      console.error('参赛者不足，记录平局并继续下一场');
+      currentRound.results.push({
+        match: currentRound.matches[matchIndex],
+        winner: null,
+        record: null
+      });
+      
+      setTimeout(() => {
+        console.log('参赛者不足，2秒后跳过这场比赛');
+        this.playNextTournamentMatch();
+      }, 1000);
+      return;
+    }
     
     eventBus.emit('arena:tournamentMatchStarting', {
       round: currentRound.round,
@@ -236,20 +273,48 @@ export class Arena {
     });
     
     setTimeout(() => {
-      this.startBattle();
+      console.log('1秒后开始比赛');
+      const started = this.startBattle();
+      if (!started) {
+        console.error('startBattle 返回 false，尝试继续下一场');
+        currentRound.results.push({
+          match: currentRound.matches[matchIndex],
+          winner: null,
+          record: null
+        });
+        setTimeout(() => this.playNextTournamentMatch(), 1000);
+      }
     }, 1000);
   }
 
   handleTournamentResult(winner, record) {
+    console.log('handleTournamentResult called, winner:', winner?.name, 'tournamentBracket exists:', !!this.tournamentBracket);
+    
     if (!this.tournamentBracket || this.tournamentBracket.length === 0) {
+      console.log('tournamentBracket is null or empty, ending tournament');
       this.endTournament();
       return;
     }
     
     const currentRound = this.tournamentBracket[this.tournamentBracket.length - 1];
+    const matchIndex = currentRound.results.length;
+    
+    console.log(`当前轮次: ${currentRound.round}, 已完成比赛数: ${matchIndex}, 总比赛数: ${currentRound.matches.length}`);
+    
+    if (matchIndex >= currentRound.matches.length) {
+      console.log('当前轮次所有比赛已完成，进入下一轮');
+      this.advanceTournamentRound();
+      return;
+    }
+    
+    const match = currentRound.matches[matchIndex];
+    console.log(`完成比赛: ${match.map(id => {
+      const g = this.tournamentGeneLab?.getGene(id);
+      return g?.name || id;
+    }).join(' vs ')}, 胜者: ${winner?.name || '无'}`);
     
     currentRound.results.push({
-      match: currentRound.matches[currentRound.results.length],
+      match,
       winner: winner ? winner.geneId : null,
       record
     });
@@ -262,18 +327,36 @@ export class Arena {
       record
     });
     
+    console.log('准备2秒后开始下一场比赛...');
+    
     setTimeout(() => {
+      console.log('定时器触发，调用 playNextTournamentMatch');
       this.playNextTournamentMatch();
     }, 2000);
   }
 
   advanceTournamentRound() {
+    console.log('advanceTournamentRound called');
+    
     const currentRound = this.tournamentBracket[this.tournamentBracket.length - 1];
     const winners = currentRound.results
       .filter(r => r.winner !== null)
       .map(r => r.winner);
     
-    if (winners.length <= 1) {
+    console.log(`当前轮次: ${currentRound.round}, 晋级者数量: ${winners.length}`);
+    winners.forEach(id => {
+      const g = this.tournamentGeneLab?.getGene(id);
+      console.log(`  - ${g?.name || id}`);
+    });
+    
+    if (winners.length === 0) {
+      console.log('没有晋级者，结束锦标赛');
+      this.endTournament(null);
+      return;
+    }
+    
+    if (winners.length === 1) {
+      console.log(`只有1个晋级者，${this.tournamentGeneLab?.getGene(winners[0])?.name || winners[0]} 成为冠军`);
       this.endTournament(winners[0]);
       return;
     }
@@ -283,6 +366,7 @@ export class Arena {
       if (i + 1 < winners.length) {
         nextMatches.push([winners[i], winners[i + 1]]);
       } else {
+        console.log(`奇数个晋级者，${this.tournamentGeneLab?.getGene(winners[i])?.name || winners[i]} 轮空`);
         nextMatches.push([winners[i]]);
       }
     }
@@ -290,6 +374,14 @@ export class Arena {
     const nextRoundName = currentRound.round === '半决赛' ? '决赛' : 
                          currentRound.round === '决赛' ? '总决赛' :
                          `第${this.tournamentBracket.length + 1}轮`;
+    
+    console.log(`下一轮: ${nextRoundName}, 比赛数: ${nextMatches.length}`);
+    nextMatches.forEach((match, idx) => {
+      console.log(`  比赛${idx + 1}: ${match.map(id => {
+        const g = this.tournamentGeneLab?.getGene(id);
+        return g?.name || id;
+      }).join(' vs ')}`);
+    });
     
     this.tournamentBracket.push({
       round: nextRoundName,
@@ -299,7 +391,9 @@ export class Arena {
     
     eventBus.emit('arena:tournamentRoundAdvanced', this.tournamentBracket);
     
+    console.log('1.5秒后开始下一轮比赛');
     setTimeout(() => {
+      console.log('定时器触发，调用 playNextTournamentMatch');
       this.playNextTournamentMatch();
     }, 1500);
   }

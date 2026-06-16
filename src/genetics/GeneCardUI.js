@@ -96,6 +96,18 @@ export class GeneCardUI {
 
   bindEvents() {
     this.previewCanvas = this.element.querySelector('.gene-preview-canvas');
+    console.log(`GeneCardUI bindEvents: ${this.rule.name}, previewCanvas exists: ${!!this.previewCanvas}`);
+    
+    if (!this.previewCanvas) {
+      console.warn(`GeneCardUI: 无法找到预览画布 for ${this.rule.name}，尝试重新获取...`);
+      const previewContainer = this.element.querySelector('.gene-preview');
+      if (previewContainer) {
+        console.log('找到预览容器，重新创建canvas');
+        previewContainer.innerHTML = '<canvas class="gene-preview-canvas" width="60" height="60"></canvas>';
+        this.previewCanvas = previewContainer.querySelector('.gene-preview-canvas');
+        console.log(`重新创建后 previewCanvas exists: ${!!this.previewCanvas}`);
+      }
+    }
     
     this.element.querySelectorAll('.dot').forEach(dot => {
       dot.addEventListener('click', (e) => {

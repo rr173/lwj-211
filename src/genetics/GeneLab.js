@@ -212,6 +212,14 @@ export class GeneLab {
       newSurvival.add(shuffledSurvival2[i]);
     }
 
+    if (newBirth.size === 0) {
+      newBirth.add(3);
+    }
+    if (newSurvival.size === 0) {
+      newSurvival.add(2);
+      newSurvival.add(3);
+    }
+
     const neighborhood = Math.random() < 0.5 ? gene1.neighborhood : gene2.neighborhood;
     const color = Math.random() < 0.5 ? gene1.color : gene2.color;
 
@@ -223,6 +231,8 @@ export class GeneLab {
       survival: newSurvival,
       neighborhood
     });
+
+    console.log(`crossbreed: 创建新基因 ${childRule.name}, birth=${[...childRule.birth]}, survival=${[...childRule.survival]}`);
 
     this.genes.push(childRule);
     this.saveToStorage();

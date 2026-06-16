@@ -66,15 +66,33 @@ export class ArenaEngine {
     const minY = Math.max(0, centerY - halfSize);
     const maxY = Math.min(this.height - 1, centerY + halfSize - 1);
     
+    let cellsPlaced = 0;
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
         if (Math.random() < density) {
+          this.setCell(x, y, true, colonyId);
+          cellsPlaced++;
+        }
+      }
+    }
+    
+    const minCells = 50;
+    if (cellsPlaced < minCells) {
+      const centerX2 = Math.floor((minX + maxX) / 2);
+      const centerY2 = Math.floor((minY + maxY) / 2);
+      for (let i = 0; i < minCells - cellsPlaced; i++) {
+        const ox = Math.floor(Math.random() * 11) - 5;
+        const oy = Math.floor(Math.random() * 11) - 5;
+        const x = centerX2 + ox;
+        const y = centerY2 + oy;
+        if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
           this.setCell(x, y, true, colonyId);
         }
       }
     }
     
     this.updateCellCounts();
+    console.log(`initializePopulation: colonyId=${colonyId}, cellsPlaced=${cellsPlaced}, finalCount=${this.cellCounts.get(colonyId) || 0}`);
   }
 
   countNeighbors(x, y, rule) {
