@@ -2,12 +2,13 @@ import { eventBus } from '../core/EventBus.js';
 import { CellStore } from '../core/CellStore.js';
 
 export class Renderer {
-  constructor(canvas, cellStore, viewState, colonyManager) {
+  constructor(canvas, cellStore, viewState, colonyManager, resourceField = null) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.cellStore = cellStore;
     this.viewState = viewState;
     this.colonyManager = colonyManager;
+    this.resourceField = resourceField;
     this.dpr = window.devicePixelRatio || 1;
     this.placingPattern = null;
     this.placingCells = null;
@@ -114,7 +115,7 @@ export class Renderer {
       canvas.width = rect.width * this.dpr;
       canvas.height = rect.height * this.dpr;
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      this._renderToCanvas(ctx, store, rect.width, rect.height);
+      this._renderToCanvas(ctx, store, rect.width, rect.height, this.resourceField);
     }
   }
 
@@ -269,7 +270,32 @@ export class Renderer {
     }
   }
 
-  _renderToCanvas(ctx, customStore, width, height) {
+  drawResourceHeatmap(ctx, customField = null, viewState = this.viewState) {
+    const field = customField || this.resourceField;
+    if (!field || !field.showHeatmap) return;
+
+    const { minX, minY, maxX, maxY } = viewState.getVisibleRect();
+    const zoom = viewState.zoom;
+    const offsetX = viewState.offsetX;
+    const offsetY = viewState.offsetY;
+
+    const entries = field.getNonZeroEntries();
+    for (const entry of entries) {
+      if (entry.x < minX - 1 || entry.x > maxX + 1 || entry.y < minY - 1 || entry.y > maxY + 1) continue;
+      
+      const sx = entry.x * zoom + offsetX;
+      const sy = entry.y * zoom + offsetY;
+      ctx.fillStyle = field.getHeatmapColor(entry.value);
+      
+      if (zoom < 2) {
+        ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+      } else {
+        ctx.fillRect(sx, sy, zoom, zoom);
+      }
+    }
+  }
+
+  _renderToCanvas(ctx, customStore, width, height, customResourceField = null) {
     const zoom = this.viewState.zoom;
     const offsetX = this.viewState.offsetX;
     const offsetY = this.viewState.offsetY;
@@ -298,6 +324,7 @@ export class Renderer {
     this.clear(ctx, width, height);
     this.drawGrid(ctx, customStore, vs);
     this.drawCells(ctx, customStore, vs);
+    this.drawResourceHeatmap(ctx, customResourceField, vs);
   }
 
   render() {
@@ -308,13 +335,13 @@ export class Renderer {
       this.canvas.width = rectA.width * this.dpr;
       this.canvas.height = rectA.height * this.dpr;
       this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      this._renderToCanvas(this.ctx, this.compareCellStores[0] || this.cellStore, rectA.width, rectA.height);
+      this._renderToCanvas(this.ctx, this.compareCellStores[0] || this.cellStore, rectA.width, rectA.height, this.resourceField);
 
       const rectB = this.canvasB.getBoundingClientRect();
       this.canvasB.width = rectB.width * this.dpr;
       this.canvasB.height = rectB.height * this.dpr;
       this.ctxB.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      this._renderToCanvas(this.ctxB, this.compareCellStores[1] || this.cellStore, rectB.width, rectB.height);
+      this._renderToCanvas(this.ctxB, this.compareCellStores[1] || this.cellStore, rectB.width, rectB.height, this.resourceField);
 
       eventBus.emit('render:done');
       return;
@@ -323,6 +350,7 @@ export class Renderer {
     this.clear();
     this.drawGrid(this.ctx);
     this.drawCells(this.ctx);
+    this.drawResourceHeatmap(this.ctx);
     this.drawHoverCell(this.ctx);
     this.drawPlacingPattern(this.ctx);
     eventBus.emit('render:done');

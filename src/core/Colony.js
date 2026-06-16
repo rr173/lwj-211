@@ -10,6 +10,9 @@ export class Colony {
     this.paused = false;
     this.prevCount = 0;
     this.currentCount = 0;
+    this.growthRateHistory = [];
+    this.mutationHistory = [];
+    this.lastMutationCheck = 0;
   }
 
   get name() {
@@ -31,11 +34,78 @@ export class Colony {
     return ((this.currentCount - this.prevCount) / this.prevCount) * 100;
   }
 
+  recordGrowthRate() {
+    const rate = this.getGrowthRate();
+    this.growthRateHistory.push(rate);
+    if (this.growthRateHistory.length > 100) {
+      this.growthRateHistory.shift();
+    }
+  }
+
+  getAverageGrowthRate(lastN = 100) {
+    if (this.growthRateHistory.length === 0) return 0;
+    const recent = this.growthRateHistory.slice(-lastN);
+    return recent.reduce((sum, r) => sum + r, 0) / recent.length;
+  }
+
+  shouldCheckMutation(currentGeneration) {
+    return currentGeneration > 0 && currentGeneration % 100 === 0 && currentGeneration > this.lastMutationCheck;
+  }
+
+  recordMutation(generation, oldBS, newBS) {
+    this.mutationHistory.push({
+      generation,
+      oldBS,
+      newBS,
+      timestamp: Date.now()
+    });
+    this.lastMutationCheck = generation;
+    eventBus.emit('colony:mutated', {
+      colonyId: this.id,
+      colonyName: this.name,
+      generation,
+      oldBS,
+      newBS
+    });
+  }
+
+  applyRandomMutation() {
+    const oldBS = this.rule.toBSString();
+    const mutateBirth = Math.random() < 0.5;
+    const targetSet = mutateBirth ? this.rule.birth : this.rule.survival;
+    const values = [...targetSet];
+    
+    if (values.length > 0 && Math.random() < 0.5) {
+      const removeIndex = Math.floor(Math.random() * values.length);
+      targetSet.delete(values[removeIndex]);
+    } else {
+      const availableNumbers = [];
+      for (let i = 0; i <= 8; i++) {
+        if (!targetSet.has(i)) availableNumbers.push(i);
+      }
+      if (availableNumbers.length > 0) {
+        const addIndex = Math.floor(Math.random() * availableNumbers.length);
+        targetSet.add(availableNumbers[addIndex]);
+      }
+    }
+    
+    const newBS = this.rule.toBSString();
+    if (oldBS !== newBS) {
+      return { oldBS, newBS };
+    }
+    return null;
+  }
+
   toJSON() {
     return {
       id: this.id,
       rule: this.rule.toJSON(),
-      paused: this.paused
+      paused: this.paused,
+      prevCount: this.prevCount,
+      currentCount: this.currentCount,
+      growthRateHistory: [...this.growthRateHistory],
+      mutationHistory: [...this.mutationHistory],
+      lastMutationCheck: this.lastMutationCheck
     };
   }
 
@@ -43,6 +113,11 @@ export class Colony {
     const colony = new Colony(Rule.fromJSON(data.rule));
     colony.id = data.id;
     colony.paused = data.paused || false;
+    colony.prevCount = data.prevCount || 0;
+    colony.currentCount = data.currentCount || 0;
+    colony.growthRateHistory = data.growthRateHistory || [];
+    colony.mutationHistory = data.mutationHistory || [];
+    colony.lastMutationCheck = data.lastMutationCheck || 0;
     const match = data.id.match(/colony_(\d+)_/);
     if (match) {
       colonyIdCounter = Math.max(colonyIdCounter, parseInt(match[1], 10));

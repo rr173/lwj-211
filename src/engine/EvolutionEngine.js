@@ -1,12 +1,14 @@
 import { eventBus } from '../core/EventBus.js';
+import { ResourceField } from '../core/ResourceField.js';
 
 const MOORE = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
 const VN = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 export class EvolutionEngine {
-  constructor(cellStore, colonyManager) {
+  constructor(cellStore, colonyManager, resourceField = null) {
     this.cellStore = cellStore;
     this.colonyManager = colonyManager;
+    this.resourceField = resourceField;
     this.generation = 0;
     this.running = false;
     this.speed = 30;
@@ -16,6 +18,9 @@ export class EvolutionEngine {
     this.history = [];
     this.maxHistoryLength = 100;
     this.historyManager = null;
+    this.totalResourcesHistory = [];
+    this.prevTotalResources = 0;
+    this.resourceNetChange = 0;
   }
 
   setHistoryManager(hm) {
@@ -57,7 +62,13 @@ export class EvolutionEngine {
     this.stop();
     this.generation = 0;
     this.history = [];
+    this.totalResourcesHistory = [];
+    this.prevTotalResources = 0;
+    this.resourceNetChange = 0;
     this.cellStore.clear();
+    if (this.resourceField) {
+      this.resourceField.clear();
+    }
 
     if (this.historyManager) {
       const mainBranch = this.historyManager.branches.get('branch_main');
@@ -116,6 +127,91 @@ export class EvolutionEngine {
       cellsColony[i] = c.colonyId;
     }
 
+    let resourcesBefore = 0;
+    if (this.resourceField) {
+      resourcesBefore = this.resourceField.getTotalResources();
+    }
+
+    const starvedCells = new Set();
+    if (this.resourceField) {
+      for (let i = 0; i < cellCount; i++) {
+        const colony = this.colonyManager.getColony(cellsColony[i]);
+        if (!colony || colony.paused) continue;
+        const consumptionRate = colony.rule.consumptionRate;
+        if (consumptionRate > 0) {
+          const remaining = this.resourceField.consume(cellsX[i], cellsY[i], consumptionRate);
+          if (remaining === 0 && this.resourceField.get(cellsX[i], cellsY[i]) === 0) {
+            starvedCells.add(cellsKey[i]);
+          }
+        }
+      }
+    }
+
+    const producers = activeColonies.filter(c => c.rule.productionRate > 0);
+    if (this.resourceField && producers.length > 0) {
+      const VN_OFFSETS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+      for (let i = 0; i < cellCount; i++) {
+        if (starvedCells.has(cellsKey[i])) continue;
+        const colony = this.colonyManager.getColony(cellsColony[i]);
+        if (!colony || colony.paused) continue;
+        const productionRate = colony.rule.productionRate;
+        if (productionRate > 0) {
+          for (const [dx, dy] of VN_OFFSETS) {
+            const nx = cellsX[i] + dx;
+            const ny = cellsY[i] + dy;
+            const nkey = CellStore.key(nx, ny);
+            if (!cellStore.has(nx, ny)) {
+              this.resourceField.add(nx, ny, productionRate);
+            }
+          }
+        }
+      }
+    }
+
+    if (this.resourceField) {
+      this.resourceField.processRecovery(this.generation + 1);
+    }
+
+    const predationActive = activeColonies.some(c => c.rule.predationPower > 0);
+    const predationVictims = new Set();
+    const predationBonusResources = [];
+
+    if (predationActive) {
+      for (let i = 0; i < cellCount; i++) {
+        if (starvedCells.has(cellsKey[i])) continue;
+        const colony = this.colonyManager.getColony(cellsColony[i]);
+        if (!colony || colony.paused) continue;
+        const predPower = colony.rule.predationPower;
+        if (predPower > 0) {
+          const offsets = colony.rule.neighborhood === 'vonneumann' ? VN : MOORE;
+          for (const [dx, dy] of offsets) {
+            const nx = cellsX[i] + dx;
+            const ny = cellsY[i] + dy;
+            const nkey = CellStore.key(nx, ny);
+            const neighborCell = cellStore.get(nx, ny);
+            if (neighborCell && neighborCell.colonyId !== colony.id) {
+              const neighborColony = this.colonyManager.getColony(neighborCell.colonyId);
+              if (neighborColony && !neighborColony.paused) {
+                const neighborPower = neighborColony.rule.predationPower;
+                if (predPower > neighborPower) {
+                  if (!predationVictims.has(nkey)) {
+                    predationVictims.add(nkey);
+                    predationBonusResources.push({ x: nx, y: ny, amount: 10 });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (this.resourceField) {
+      for (const bonus of predationBonusResources) {
+        this.resourceField.add(bonus.x, bonus.y, bonus.amount);
+      }
+    }
+
     const neighborMap = {};
 
     for (let ai = 0; ai < activeColonies.length; ai++) {
@@ -126,6 +222,8 @@ export class EvolutionEngine {
 
       for (let celli = 0; celli < cellCount; celli++) {
         if (cellsColony[celli] !== cid) continue;
+        if (starvedCells.has(cellsKey[celli])) continue;
+        if (predationVictims.has(cellsKey[celli])) continue;
         const cellx = cellsX[celli];
         const celly = cellsY[celli];
 
@@ -157,6 +255,8 @@ export class EvolutionEngine {
 
       for (let celli = 0; celli < cellCount; celli++) {
         if (cellsColony[celli] !== cid) continue;
+        if (starvedCells.has(cellsKey[celli])) continue;
+        if (predationVictims.has(cellsKey[celli])) continue;
         const key = cellsKey[celli];
         const counts = neighborMap[key];
         const n = counts ? (counts[cid] || 0) : 0;
@@ -169,7 +269,12 @@ export class EvolutionEngine {
 
     const existingMap = cellStore.map;
     for (const key in neighborMap) {
-      if (existingMap.has(key)) continue;
+      if (existingMap.has(key)) {
+        if (starvedCells.has(key) || predationVictims.has(key)) {
+        } else {
+          continue;
+        }
+      }
       const counts = neighborMap[key];
       const comma = key.indexOf(',');
       const x = +key.slice(0, comma);
@@ -195,40 +300,66 @@ export class EvolutionEngine {
       if (list.length === 1) {
         winner = list[0];
       } else {
-        if (strategy === 'priority') {
-          winner = list[0];
-          for (let i = 1; i < list.length; i++) {
-            const c = list[i];
-            if (c.colony.rule.priority > winner.colony.rule.priority ||
-                (c.colony.rule.priority === winner.colony.rule.priority && c.n > winner.n)) {
-              winner = c;
-            }
+        let hasPredator = false;
+        let maxPredPower = -1;
+        for (const c of list) {
+          if (c.colony.rule.predationPower > maxPredPower) {
+            maxPredPower = c.colony.rule.predationPower;
+            hasPredator = maxPredPower > 0;
           }
-        } else if (strategy === 'competition') {
-          winner = list[0];
-          for (let i = 1; i < list.length; i++) {
-            const c = list[i];
-            if (c.n > winner.n ||
-                (c.n === winner.n && c.colony.rule.priority > winner.colony.rule.priority)) {
-              winner = c;
-            }
-          }
-        } else if (strategy === 'peace') {
-          const existing = existingMap.get(key);
-          if (existing) {
-            for (let i = 0; i < list.length; i++) {
-              const c = list[i];
-              if (c.birth === 0 && c.cid === existing.colonyId) {
+        }
+        
+        if (hasPredator && maxPredPower > 0) {
+          const predators = list.filter(c => c.colony.rule.predationPower === maxPredPower);
+          if (predators.length === 1) {
+            winner = predators[0];
+          } else {
+            winner = predators[0];
+            for (let i = 1; i < predators.length; i++) {
+              const c = predators[i];
+              if (c.n > winner.n ||
+                  (c.n === winner.n && c.colony.rule.priority > winner.colony.rule.priority)) {
                 winner = c;
-                break;
               }
             }
-          } else {
+          }
+        } else {
+          if (strategy === 'priority') {
             winner = list[0];
             for (let i = 1; i < list.length; i++) {
               const c = list[i];
-              if (c.colony.rule.priority > winner.colony.rule.priority) {
+              if (c.colony.rule.priority > winner.colony.rule.priority ||
+                  (c.colony.rule.priority === winner.colony.rule.priority && c.n > winner.n)) {
                 winner = c;
+              }
+            }
+          } else if (strategy === 'competition') {
+            winner = list[0];
+            for (let i = 1; i < list.length; i++) {
+              const c = list[i];
+              if (c.n > winner.n ||
+                  (c.n === winner.n && c.colony.rule.priority > winner.colony.rule.priority)) {
+                winner = c;
+              }
+            }
+          } else if (strategy === 'peace') {
+            const existing = existingMap.get(key);
+            if (existing && !starvedCells.has(key) && !predationVictims.has(key)) {
+              for (let i = 0; i < list.length; i++) {
+                const c = list[i];
+                if (c.birth === 0 && c.cid === existing.colonyId) {
+                  winner = c;
+                  break;
+                }
+              }
+            }
+            if (!winner) {
+              winner = list[0];
+              for (let i = 1; i < list.length; i++) {
+                const c = list[i];
+                if (c.colony.rule.priority > winner.colony.rule.priority) {
+                  winner = c;
+                }
               }
             }
           }
@@ -266,9 +397,36 @@ export class EvolutionEngine {
 
     for (let i = 0; i < allColonies.length; i++) {
       allColonies[i].currentCount = cellStore.countByColony(allColonies[i].id);
+      if (!allColonies[i].paused) {
+        allColonies[i].recordGrowthRate();
+      }
     }
 
-    this.generation++;
+    const nextGeneration = this.generation + 1;
+    for (const colony of activeColonies) {
+      if (colony.shouldCheckMutation(nextGeneration)) {
+        const avgGrowth = colony.getAverageGrowthRate(100);
+        if (avgGrowth < -5) {
+          const mutationResult = colony.applyRandomMutation();
+          if (mutationResult) {
+            colony.recordMutation(nextGeneration, mutationResult.oldBS, mutationResult.newBS);
+          }
+        }
+      }
+    }
+
+    if (this.resourceField) {
+      const resourcesAfter = this.resourceField.getTotalResources();
+      this.resourceNetChange = resourcesAfter - resourcesBefore;
+      this.resourceField.lastNetChange = this.resourceNetChange;
+      this.prevTotalResources = resourcesAfter;
+      this.totalResourcesHistory.push({ generation: nextGeneration, total: resourcesAfter });
+      if (this.totalResourcesHistory.length > this.maxHistoryLength) {
+        this.totalResourcesHistory.shift();
+      }
+    }
+
+    this.generation = nextGeneration;
     this.recordHistory();
 
     if (this.historyManager) {
@@ -286,7 +444,12 @@ export class EvolutionEngine {
     for (let i = 0; i < allColonies.length; i++) {
       snapshot[allColonies[i].id] = allColonies[i].currentCount;
     }
-    this.history.push({ generation: this.generation, snapshot });
+    const totalResources = this.resourceField ? this.resourceField.getTotalResources() : 0;
+    this.history.push({ 
+      generation: this.generation, 
+      snapshot,
+      totalResources 
+    });
     if (this.history.length > this.maxHistoryLength) this.history.shift();
     eventBus.emit('history:updated', this.history);
   }
@@ -295,7 +458,8 @@ export class EvolutionEngine {
     return {
       generation: this.generation,
       collisionStrategy: this.collisionStrategy,
-      speed: this.speed
+      speed: this.speed,
+      resources: this.resourceField ? this.resourceField.toJSON() : null
     };
   }
 
@@ -304,5 +468,10 @@ export class EvolutionEngine {
     this.collisionStrategy = data.collisionStrategy || 'priority';
     this.speed = data.speed || 30;
     this.history = [];
+    this.totalResourcesHistory = [];
+    if (this.resourceField && data.resources) {
+      const restored = ResourceField.fromJSON(data.resources);
+      this.resourceField.copyFrom(restored);
+    }
   }
 }

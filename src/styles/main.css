@@ -758,3 +758,285 @@ textarea:focus {
 .hidden {
   display: none !important;
 }
+
+.colony-eco-meta {
+  font-size: 10px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.mutation-badge {
+  color: #ffb74d;
+  font-size: 12px;
+  margin-left: 4px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.colony-name-text {
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.colony-name-text:hover {
+  color: #e94560;
+}
+
+.eco-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(80, 100, 140, 0.2);
+}
+
+.eco-item:last-child {
+  border-bottom: none;
+}
+
+.eco-label {
+  font-size: 11px;
+  color: #888;
+}
+
+.eco-value {
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.eco-value.positive {
+  color: #4caf50;
+}
+
+.eco-value.negative {
+  color: #f44336;
+}
+
+.small-btn {
+  padding: 3px 8px;
+  font-size: 10px;
+  background: #0f3460;
+  border: none;
+  border-radius: 3px;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.small-btn:hover {
+  background: #1a1a4e;
+}
+
+.small-btn.active {
+  background: #e94560;
+}
+
+.food-chain {
+  margin-top: 4px;
+}
+
+.food-chain-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0;
+  font-size: 11px;
+  gap: 8px;
+}
+
+.predator {
+  font-weight: 600;
+}
+
+.predation-arrow {
+  color: #e94560;
+  font-weight: bold;
+  letter-spacing: -2px;
+}
+
+.prey {
+  opacity: 0.8;
+}
+
+.stat-growth.warning {
+  color: #ff9800;
+}
+
+.stat-growth.normal {
+  color: #888;
+}
+
+.mutation-popup {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.mutation-alert {
+  background: linear-gradient(135deg, #ffb74d, #ff9800);
+  color: #1a1a2e;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(255, 183, 77, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mutation-alert code {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+}
+
+.mutation-icon {
+  font-size: 18px;
+}
+
+.mutation-gen {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-left: auto;
+}
+
+.blinking {
+  animation: blink 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes blink {
+  from {
+    box-shadow: 0 4px 20px rgba(255, 183, 77, 0.4);
+    transform: translateX(-50%) scale(1);
+  }
+  to {
+    box-shadow: 0 4px 30px rgba(255, 183, 77, 0.8), 0 0 40px rgba(255, 183, 77, 0.4);
+    transform: translateX(-50%) scale(1.02);
+  }
+}
+
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: #16213e;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 400px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  border: 1px solid #0f3460;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #0f3460;
+  background: #0f3460;
+  border-radius: 8px 8px 0 0;
+}
+
+.modal-header span {
+  font-weight: 600;
+  color: #e94560;
+  font-size: 14px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: #e94560;
+  background: none;
+}
+
+.modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.mutation-history-item {
+  padding: 12px;
+  background: #1a1a2e;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  border-left: 3px solid #ffb74d;
+}
+
+.mutation-history-item:last-child {
+  margin-bottom: 0;
+}
+
+.mutation-history-gen {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffb74d;
+  margin-bottom: 4px;
+}
+
+.mutation-history-rule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.mutation-history-rule code {
+  background: #0f3460;
+  padding: 3px 8px;
+  border-radius: 3px;
+  color: #4fc3f7;
+}
+
+.mutation-arrow {
+  color: #e94560;
+  font-weight: bold;
+}
+
+.mutation-history-time {
+  font-size: 10px;
+  color: #666;
+}
+

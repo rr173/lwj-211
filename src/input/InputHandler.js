@@ -1,13 +1,14 @@
 import { eventBus } from '../core/EventBus.js';
 
 export class InputHandler {
-  constructor(canvas, viewState, cellStore, colonyManager, patternManager, historyManager = null) {
+  constructor(canvas, viewState, cellStore, colonyManager, patternManager, historyManager = null, resourceField = null) {
     this.canvas = canvas;
     this.viewState = viewState;
     this.cellStore = cellStore;
     this.colonyManager = colonyManager;
     this.patternManager = patternManager;
     this.historyManager = historyManager;
+    this.resourceField = resourceField;
 
     this.isDragging = false;
     this.isPanning = false;

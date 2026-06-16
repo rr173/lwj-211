@@ -1,8 +1,9 @@
 import { eventBus } from './EventBus.js';
 import { CellStore } from './CellStore.js';
+import { ResourceField } from './ResourceField.js';
 
 export class Snapshot {
-  constructor(generation, cellStore, colonyManager) {
+  constructor(generation, cellStore, colonyManager, resourceField = null) {
     this.generation = generation;
     this.timestamp = Date.now();
     this.cells = cellStore.toJSON();
@@ -11,12 +12,16 @@ export class Snapshot {
       this.colonyStates.set(colony.id, {
         paused: colony.paused,
         currentCount: colony.currentCount,
-        prevCount: colony.prevCount
+        prevCount: colony.prevCount,
+        growthRateHistory: [...colony.growthRateHistory],
+        mutationHistory: [...colony.mutationHistory],
+        lastMutationCheck: colony.lastMutationCheck
       });
     }
+    this.resources = resourceField ? resourceField.toJSON() : null;
   }
 
-  restoreTo(cellStore, colonyManager) {
+  restoreTo(cellStore, colonyManager, resourceField = null) {
     cellStore.clear();
     for (const cell of this.cells) {
       cellStore.set(cell.x, cell.y, cell.c);
@@ -27,7 +32,14 @@ export class Snapshot {
         colony.paused = state.paused;
         colony.currentCount = state.currentCount;
         colony.prevCount = state.prevCount;
+        colony.growthRateHistory = [...(state.growthRateHistory || [])];
+        colony.mutationHistory = [...(state.mutationHistory || [])];
+        colony.lastMutationCheck = state.lastMutationCheck || 0;
       }
+    }
+    if (resourceField && this.resources) {
+      const restored = ResourceField.fromJSON(this.resources);
+      resourceField.copyFrom(restored);
     }
   }
 }
@@ -87,10 +99,11 @@ export class Branch {
 }
 
 export class HistoryManager {
-  constructor(cellStore, colonyManager, engine) {
+  constructor(cellStore, colonyManager, engine, resourceField = null) {
     this.cellStore = cellStore;
     this.colonyManager = colonyManager;
     this.engine = engine;
+    this.resourceField = resourceField;
 
     this.branches = new Map();
     this.currentBranchId = null;
@@ -142,10 +155,11 @@ export class HistoryManager {
     const latestSnap = branch.snapshots.length > 0 ? branch.snapshots[branch.snapshots.length - 1] : null;
 
     if (latestSnap) {
-      latestSnap.restoreTo(this.cellStore, this.colonyManager);
+      latestSnap.restoreTo(this.cellStore, this.colonyManager, this.resourceField);
       this.engine.generation = latestSnap.generation;
     } else {
       this.cellStore.clear();
+      if (this.resourceField) this.resourceField.clear();
       this.engine.generation = branch.startGeneration;
     }
 
@@ -188,9 +202,10 @@ export class HistoryManager {
     const name = branchName || this._generateBranchName();
     const newBranch = new Branch(name, newId, snapshot.generation, sourceId);
 
-    const clonedSnapshot = new Snapshot(snapshot.generation, this.cellStore, this.colonyManager);
+    const clonedSnapshot = new Snapshot(snapshot.generation, this.cellStore, this.colonyManager, this.resourceField);
     clonedSnapshot.cells = JSON.parse(JSON.stringify(snapshot.cells));
     clonedSnapshot.colonyStates = new Map(snapshot.colonyStates);
+    clonedSnapshot.resources = snapshot.resources ? JSON.parse(JSON.stringify(snapshot.resources)) : null;
     newBranch.addSnapshot(clonedSnapshot);
 
     this.branches.set(newId, newBranch);
@@ -246,7 +261,7 @@ export class HistoryManager {
 
     if (branch.findExactSnapshot(gen)) return null;
 
-    const snapshot = new Snapshot(gen, this.cellStore, this.colonyManager);
+    const snapshot = new Snapshot(gen, this.cellStore, this.colonyManager, this.resourceField);
     branch.addSnapshot(snapshot);
     branch.currentGeneration = gen;
 
@@ -264,7 +279,7 @@ export class HistoryManager {
     if (!snapshot) return false;
 
     this.engine.stop();
-    snapshot.restoreTo(this.cellStore, this.colonyManager);
+    snapshot.restoreTo(this.cellStore, this.colonyManager, this.resourceField);
     this.engine.generation = snapshot.generation;
 
     this.isBrowsingHistory = true;

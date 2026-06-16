@@ -1,16 +1,18 @@
 import { eventBus } from '../core/EventBus.js';
 import { Rule, PRESET_RULES } from '../core/Rule.js';
 import { Colony } from '../core/Colony.js';
+import { ResourceField } from '../core/ResourceField.js';
 import { parseRLE } from '../engine/PatternManager.js';
 
 export class UIManager {
-  constructor(colonyManager, engine, patternManager, cellStore, viewState, historyManager = null) {
+  constructor(colonyManager, engine, patternManager, cellStore, viewState, historyManager = null, resourceField = null) {
     this.colonyManager = colonyManager;
     this.engine = engine;
     this.patternManager = patternManager;
     this.cellStore = cellStore;
     this.viewState = viewState;
     this.historyManager = historyManager;
+    this.resourceField = resourceField;
 
     this.timelineDragging = false;
     this.selectedForCompare = new Set();
@@ -128,8 +130,30 @@ export class UIManager {
           this.historyManager.saveSnapshot(true);
           this.showToast('快照已保存');
         }
+      } else if (e.code === 'KeyR') {
+        e.preventDefault();
+        this.toggleResourceHeatmap();
       }
     });
+
+    const toggleHeatmapBtn = document.getElementById('toggle-heatmap-btn');
+    if (toggleHeatmapBtn) {
+      toggleHeatmapBtn.addEventListener('click', () => this.toggleResourceHeatmap());
+    }
+
+    const closeMutationModal = document.getElementById('close-mutation-modal');
+    if (closeMutationModal) {
+      closeMutationModal.addEventListener('click', () => this.hideMutationHistoryModal());
+    }
+
+    const mutationModal = document.getElementById('mutation-history-modal');
+    if (mutationModal) {
+      mutationModal.addEventListener('click', (e) => {
+        if (e.target === mutationModal) {
+          this.hideMutationHistoryModal();
+        }
+      });
+    }
 
     eventBus.on('mouse:hover', (world) => {
       this.renderer?.setHoverCell?.(world.x, world.y);
@@ -441,6 +465,7 @@ export class UIManager {
       btn.classList.toggle('active', running);
     });
     eventBus.on('history:updated', (history) => this.updateChart(history));
+    eventBus.on('colony:mutated', (data) => this.showMutationAlert(data));
 
     if (this.historyManager) {
       eventBus.on('timeline:changed', () => this.updateTimeline());
@@ -467,6 +492,9 @@ export class UIManager {
     const bs = document.getElementById('rule-bs').value.trim();
     const neighborhood = document.getElementById('rule-neighborhood').value;
     const priority = parseInt(document.getElementById('rule-priority').value, 10) || 0;
+    const consumptionRate = parseInt(document.getElementById('rule-consumption').value, 10) || 1;
+    const productionRate = parseInt(document.getElementById('rule-production').value, 10) || 0;
+    const predationPower = parseInt(document.getElementById('rule-predation').value, 10) || 0;
 
     if (!bs) {
       alert('请输入B/S记法');
@@ -480,13 +508,19 @@ export class UIManager {
       birth,
       survival,
       neighborhood,
-      priority
+      priority,
+      consumptionRate: Math.max(0, Math.min(10, consumptionRate)),
+      productionRate: Math.max(0, Math.min(10, productionRate)),
+      predationPower: Math.max(0, Math.min(10, predationPower))
     });
     const colony = new Colony(rule);
     this.colonyManager.addColony(colony);
     
     document.getElementById('rule-name').value = '';
     document.getElementById('rule-bs').value = '';
+    document.getElementById('rule-consumption').value = '1';
+    document.getElementById('rule-production').value = '0';
+    document.getElementById('rule-predation').value = '0';
   }
 
   addQuickRule(str) {
@@ -524,7 +558,8 @@ export class UIManager {
       version: 1,
       engine: this.engine.toJSON(),
       colonies: this.colonyManager.toJSON(),
-      cells: this.cellStore.toJSON()
+      cells: this.cellStore.toJSON(),
+      resources: this.resourceField ? this.resourceField.toJSON() : null
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -543,6 +578,9 @@ export class UIManager {
         this.engine.stop();
         this.colonyManager.clear();
         this.cellStore.clear();
+        if (this.resourceField) {
+          this.resourceField.clear();
+        }
         
         this.engine.loadFromJSON(data.engine || {});
         
@@ -553,6 +591,11 @@ export class UIManager {
         
         for (const cell of data.cells || []) {
           this.cellStore.set(cell.x, cell.y, cell.c);
+        }
+        
+        if (this.resourceField && data.resources) {
+          const restored = ResourceField.fromJSON(data.resources);
+          this.resourceField.copyFrom(restored);
         }
         
         document.getElementById('collision-strategy').value = this.engine.collisionStrategy;
@@ -585,13 +628,18 @@ export class UIManager {
       const selected = this.colonyManager.selectedColonyId === colony.id;
       const bs = colony.rule.toBSString();
       const nh = colony.rule.neighborhood === 'vonneumann' ? 'VN' : 'Moore';
+      const cons = colony.rule.consumptionRate;
+      const prod = colony.rule.productionRate;
+      const pred = colony.rule.predationPower;
+      const hasMutations = colony.mutationHistory && colony.mutationHistory.length > 0;
       return `
         <div class="colony-item ${selected ? 'selected' : ''} ${colony.paused ? 'paused' : ''}" 
              data-id="${colony.id}" style="border-left-color: ${colony.color}">
           <div class="colony-header">
-            <div class="colony-name">
+            <div class="colony-name" title="${hasMutations ? '点击查看突变历史' : ''}">
               <span class="colony-color" style="background: ${colony.color}"></span>
-              <span>${this.escapeHtml(colony.name)}</span>
+              <span class="colony-name-text">${this.escapeHtml(colony.name)}</span>
+              ${hasMutations ? '<span class="mutation-badge" title="有突变历史">⚡</span>' : ''}
             </div>
             <div class="colony-actions">
               <button class="pause-btn" data-id="${colony.id}">${colony.paused ? '▶' : '⏸'}</button>
@@ -599,7 +647,10 @@ export class UIManager {
             </div>
           </div>
           <div class="colony-meta">
-            ${bs} | ${nh} | 优先级: ${colony.rule.priority} | 细胞: ${this.cellStore.countByColony(colony.id)}
+            ${bs} | ${nh} | 优先级: ${colony.rule.priority}
+          </div>
+          <div class="colony-eco-meta">
+            消耗: ${cons} | 产出: ${prod} | 掠食: ${pred} | 细胞: ${this.cellStore.countByColony(colony.id)}
           </div>
         </div>
       `;
@@ -608,6 +659,11 @@ export class UIManager {
     container.querySelectorAll('.colony-item').forEach(el => {
       el.addEventListener('click', (e) => {
         if (e.target.classList.contains('pause-btn') || e.target.classList.contains('delete-btn')) return;
+        if (e.target.closest('.colony-name-text') || e.target.closest('.mutation-badge')) {
+          const colonyId = el.dataset.id;
+          this.showMutationHistory(colonyId);
+          return;
+        }
         this.colonyManager.selectColony(el.dataset.id);
       });
     });
@@ -645,6 +701,9 @@ export class UIManager {
   }
 
   updateStatsPanel() {
+    this.updateEcoSummary();
+    this.updateFoodChain();
+    
     const container = document.getElementById('stats-list');
     const colonies = this.colonyManager.getAll();
 
@@ -656,6 +715,7 @@ export class UIManager {
     container.innerHTML = colonies.map(colony => {
       const count = this.cellStore.countByColony(colony.id);
       const growth = colony.getGrowthRate();
+      const avgGrowth = colony.getAverageGrowthRate(100);
       let growthClass = 'zero';
       let growthText = '0.00%';
       if (growth > 0.01) {
@@ -665,6 +725,7 @@ export class UIManager {
         growthClass = 'negative';
         growthText = `${growth.toFixed(2)}%`;
       }
+      const avgGrowthClass = avgGrowth < -5 ? 'warning' : 'normal';
       return `
         <div class="stat-item" style="border-left-color: ${colony.color}">
           <div class="stat-row">
@@ -679,9 +740,156 @@ export class UIManager {
             <span style="color:#888;font-size:10px">增长率</span>
             <span class="stat-growth ${growthClass}">${growthText}</span>
           </div>
+          <div class="stat-row">
+            <span style="color:#888;font-size:10px">平均(100代)</span>
+            <span class="stat-growth ${avgGrowthClass}">${avgGrowth.toFixed(2)}%</span>
+          </div>
         </div>
       `;
     }).join('');
+  }
+
+  updateEcoSummary() {
+    const totalEl = document.getElementById('eco-total-resources');
+    const rateEl = document.getElementById('eco-resource-rate');
+    
+    if (this.resourceField) {
+      const total = this.resourceField.getTotalResources();
+      totalEl.textContent = total.toLocaleString();
+      
+      const netChange = this.engine.resourceNetChange || 0;
+      let rateText = `${netChange >= 0 ? '+' : ''}${netChange}/代`;
+      if (netChange > 0) {
+        rateEl.className = 'eco-value positive';
+      } else if (netChange < 0) {
+        rateEl.className = 'eco-value negative';
+      } else {
+        rateEl.className = 'eco-value';
+      }
+      rateEl.textContent = rateText;
+    } else {
+      totalEl.textContent = 'N/A';
+      rateEl.textContent = 'N/A';
+    }
+  }
+
+  updateFoodChain() {
+    const container = document.getElementById('food-chain');
+    const colonies = this.colonyManager.getAll();
+    
+    if (colonies.length < 2) {
+      container.innerHTML = '<div class="empty-hint" style="padding:8px">至少需要2个群落才能显示食物链</div>';
+      return;
+    }
+
+    const predators = colonies.filter(c => c.rule.predationPower > 0);
+    if (predators.length === 0) {
+      container.innerHTML = '<div class="empty-hint" style="padding:8px">当前没有掠食者群落</div>';
+      return;
+    }
+
+    const relations = [];
+    for (const predator of colonies) {
+      if (predator.rule.predationPower === 0) continue;
+      for (const prey of colonies) {
+        if (predator.id === prey.id) continue;
+        if (predator.rule.predationPower > prey.rule.predationPower) {
+          relations.push({
+            predator,
+            prey,
+            powerDiff: predator.rule.predationPower - prey.rule.predationPower
+          });
+        }
+      }
+    }
+
+    if (relations.length === 0) {
+      container.innerHTML = '<div class="empty-hint" style="padding:8px">暂无掠食关系</div>';
+      return;
+    }
+
+    container.innerHTML = relations.map(r => `
+      <div class="food-chain-item">
+        <span class="predator" style="color: ${r.predator.color}">${this.escapeHtml(r.predator.name)}</span>
+        <span class="predation-arrow">${'▶'.repeat(Math.min(3, r.powerDiff))}</span>
+        <span class="prey" style="color: ${r.prey.color}">${this.escapeHtml(r.prey.name)}</span>
+      </div>
+    `).join('');
+  }
+
+  toggleResourceHeatmap() {
+    if (!this.resourceField) return;
+    const enabled = this.resourceField.toggleHeatmap();
+    const btn = document.getElementById('toggle-heatmap-btn');
+    if (btn) {
+      btn.textContent = enabled ? '关闭 (R)' : '开启 (R)';
+      btn.classList.toggle('active', enabled);
+    }
+    this.showToast(enabled ? '资源热力图已开启' : '资源热力图已关闭');
+    this.renderer?.render?.();
+  }
+
+  showMutationAlert(data) {
+    const popup = document.getElementById('mutation-popup');
+    if (!popup) return;
+
+    popup.innerHTML = `
+      <div class="mutation-alert">
+        <span class="mutation-icon">⚡</span>
+        <span class="mutation-text">
+          <strong>${this.escapeHtml(data.colonyName)}</strong> 发生突变:
+          <code>${data.oldBS}</code> → <code>${data.newBS}</code>
+        </span>
+        <span class="mutation-gen">第 ${data.generation} 代</span>
+      </div>
+    `;
+    popup.classList.remove('hidden');
+    popup.classList.add('blinking');
+
+    setTimeout(() => {
+      popup.classList.remove('blinking');
+      setTimeout(() => {
+        popup.classList.add('hidden');
+      }, 3000);
+    }, 2000);
+  }
+
+  showMutationHistory(colonyId) {
+    const colony = this.colonyManager.getColony(colonyId);
+    if (!colony) return;
+
+    const modal = document.getElementById('mutation-history-modal');
+    const title = document.getElementById('mutation-history-title');
+    const list = document.getElementById('mutation-history-list');
+    
+    if (!modal || !title || !list) return;
+
+    title.textContent = `${colony.name} - 突变历史`;
+
+    if (!colony.mutationHistory || colony.mutationHistory.length === 0) {
+      list.innerHTML = '<div class="empty-hint" style="padding:20px">该群落暂无突变记录</div>';
+    } else {
+      list.innerHTML = colony.mutationHistory.map((m, i) => `
+        <div class="mutation-history-item">
+          <div class="mutation-history-gen">第 ${m.generation} 代</div>
+          <div class="mutation-history-rule">
+            <code>${m.oldBS}</code>
+            <span class="mutation-arrow">→</span>
+            <code>${m.newBS}</code>
+          </div>
+          <div class="mutation-history-time">${new Date(m.timestamp).toLocaleString()}</div>
+        </div>
+      `).reverse().join('');
+    }
+
+    modal.classList.remove('hidden');
+  }
+
+  hideMutationHistoryModal() {
+    const modal = document.getElementById('mutation-history-modal');
+    if (modal) {
+      modal.classList.add('hidden');
+    }
   }
 
   updateChart(history) {
@@ -714,9 +922,16 @@ export class UIManager {
     if (colonies.length === 0) return;
 
     let maxCount = 1;
+    let maxResources = 1;
+    let hasResources = false;
+    
     for (const point of history) {
       for (const count of Object.values(point.snapshot)) {
         maxCount = Math.max(maxCount, count);
+      }
+      if (point.totalResources !== undefined) {
+        maxResources = Math.max(maxResources, point.totalResources);
+        hasResources = true;
       }
     }
 
@@ -753,6 +968,36 @@ export class UIManager {
         }
       }
       ctx.stroke();
+    }
+
+    if (hasResources && this.resourceField) {
+      ctx.strokeStyle = '#888888';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+
+      let started = false;
+      for (let i = 0; i < history.length; i++) {
+        const point = history[i];
+        if (point.totalResources !== undefined) {
+          const x = padding + (i / (history.length - 1)) * chartW;
+          const y = padding + chartH - (point.totalResources / maxResources) * chartH;
+
+          if (!started) {
+            ctx.moveTo(x, y);
+            started = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#888888';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('资源', w - padding, padding + 8);
     }
 
     ctx.fillStyle = '#888';

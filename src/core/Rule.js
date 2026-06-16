@@ -7,6 +7,9 @@ export class Rule {
     this.survival = options.survival || new Set([2, 3]);
     this.neighborhood = options.neighborhood || 'moore';
     this.priority = options.priority || 0;
+    this.consumptionRate = options.consumptionRate !== undefined ? Math.max(0, options.consumptionRate) : 1;
+    this.productionRate = options.productionRate !== undefined ? Math.max(0, options.productionRate) : 0;
+    this.predationPower = options.predationPower !== undefined ? Math.max(0, Math.min(10, options.predationPower)) : 0;
   }
 
   static parseBS(bsString) {
@@ -85,7 +88,10 @@ export class Rule {
       birth: [...this.birth],
       survival: [...this.survival],
       neighborhood: this.neighborhood,
-      priority: this.priority
+      priority: this.priority,
+      consumptionRate: this.consumptionRate,
+      productionRate: this.productionRate,
+      predationPower: this.predationPower
     };
   }
 
@@ -97,7 +103,10 @@ export class Rule {
       birth: new Set(data.birth || [3]),
       survival: new Set(data.survival || [2, 3]),
       neighborhood: data.neighborhood || 'moore',
-      priority: data.priority || 0
+      priority: data.priority || 0,
+      consumptionRate: data.consumptionRate !== undefined ? data.consumptionRate : 1,
+      productionRate: data.productionRate !== undefined ? data.productionRate : 0,
+      predationPower: data.predationPower !== undefined ? data.predationPower : 0
     });
   }
 }
@@ -109,7 +118,10 @@ export const PRESET_RULES = [
     birth: new Set([3]),
     survival: new Set([2, 3]),
     neighborhood: 'moore',
-    priority: 0
+    priority: 0,
+    consumptionRate: 1,
+    productionRate: 2,
+    predationPower: 0
   }),
   () => new Rule({
     name: '高生命',
@@ -117,7 +129,10 @@ export const PRESET_RULES = [
     birth: new Set([3, 6]),
     survival: new Set([2, 3]),
     neighborhood: 'moore',
-    priority: 1
+    priority: 1,
+    consumptionRate: 2,
+    productionRate: 0,
+    predationPower: 5
   }),
   () => new Rule({
     name: 'VN邻域规则',
@@ -125,6 +140,9 @@ export const PRESET_RULES = [
     birth: new Set([2]),
     survival: new Set([0, 1, 3]),
     neighborhood: 'vonneumann',
-    priority: 2
+    priority: 2,
+    consumptionRate: 1,
+    productionRate: 0,
+    predationPower: 0
   })
 ];
