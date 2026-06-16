@@ -301,15 +301,73 @@ export class UIManager {
     const branch = this.historyManager.getBranch(branchId);
     if (!branch) return;
 
-    const currentBranchId = this.historyManager.currentBranchId;
-    this.historyManager.switchBranch(branchId);
+    const origBranchId = this.historyManager.currentBranchId;
+
+    this.engine.stop();
+    this.historyManager.currentBranchId = branchId;
+
+    const latestSnap = branch.snapshots.length > 0
+      ? branch.snapshots[branch.snapshots.length - 1]
+      : null;
+
+    if (latestSnap) {
+      latestSnap.restoreTo(this.cellStore, this.colonyManager);
+      this.engine.generation = latestSnap.generation;
+    } else {
+      this.cellStore.clear();
+      this.engine.generation = branch.startGeneration;
+    }
+
+    if (branch.currentGeneration > this.engine.generation) {
+      const stepsToCatchUp = branch.currentGeneration - this.engine.generation;
+      this.historyManager.catchUpMode = true;
+      for (let i = 0; i < stepsToCatchUp; i++) {
+        const genBefore = this.engine.generation;
+        this.engine.step();
+        if (this.engine.generation === genBefore) break;
+      }
+      this.historyManager.catchUpMode = false;
+    }
+
+    const genBeforeStep = this.engine.generation;
     this.engine.step();
-    const latestSnap = branch.snapshots[branch.snapshots.length - 1];
-    this.historyManager.switchBranch(currentBranchId);
+    const genAfterStep = this.engine.generation;
+
+    branch.currentGeneration = this.engine.generation;
+
+    this.historyManager.saveSnapshot(false);
+
+    this.historyManager.currentBranchId = origBranchId;
+    const origBranch = this.historyManager.getBranch(origBranchId);
+    if (origBranch) {
+      const origLatestSnap = origBranch.snapshots.length > 0
+        ? origBranch.snapshots[origBranch.snapshots.length - 1]
+        : null;
+      if (origLatestSnap) {
+        origLatestSnap.restoreTo(this.cellStore, this.colonyManager);
+        this.engine.generation = origLatestSnap.generation;
+      } else {
+        this.cellStore.clear();
+        this.engine.generation = origBranch.startGeneration;
+      }
+      if (origBranch.currentGeneration > this.engine.generation) {
+        const stepsToCatchUp = origBranch.currentGeneration - this.engine.generation;
+        this.historyManager.catchUpMode = true;
+        for (let i = 0; i < stepsToCatchUp; i++) {
+          const genBefore = this.engine.generation;
+          this.engine.step();
+          if (this.engine.generation === genBefore) break;
+        }
+        this.historyManager.catchUpMode = false;
+      }
+      origBranch.currentGeneration = this.engine.generation;
+    }
 
     if (this.renderer && this.renderer.renderCompareFrame) {
       this.renderer.renderCompareFrame(index, branch);
     }
+
+    eventBus.emit('timeline:changed', this.historyManager.getTimelineData());
   }
 
   enterCompareModeUI(data) {

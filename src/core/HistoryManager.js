@@ -106,6 +106,8 @@ export class HistoryManager {
     this.isBrowsingHistory = false;
     this.browsingGeneration = null;
 
+    this.catchUpMode = false;
+
     this._initMainBranch();
   }
 
@@ -145,6 +147,20 @@ export class HistoryManager {
     } else {
       this.cellStore.clear();
       this.engine.generation = branch.startGeneration;
+    }
+
+    if (branch.currentGeneration > this.engine.generation) {
+      const stepsNeeded = branch.currentGeneration - this.engine.generation;
+      this.catchUpMode = true;
+      const origRunning = this.engine.running;
+      this.engine.stop();
+      for (let i = 0; i < stepsNeeded; i++) {
+        const genBefore = this.engine.generation;
+        this.engine.step();
+        if (this.engine.generation === genBefore) break;
+      }
+      this.catchUpMode = false;
+      if (origRunning) this.engine.start();
     }
 
     eventBus.emit('branch:switched', branch);
@@ -216,6 +232,8 @@ export class HistoryManager {
   }
 
   saveSnapshot(force = false) {
+    if (this.catchUpMode) return null;
+    
     const branch = this.getCurrentBranch();
     if (!branch) return null;
 
@@ -251,6 +269,7 @@ export class HistoryManager {
 
     this.isBrowsingHistory = true;
     this.browsingGeneration = snapshot.generation;
+    this._jumpSnapshotGen = snapshot.generation;
 
     eventBus.emit('timeline:jumped', snapshot.generation);
     eventBus.emit('state:updated');
@@ -347,13 +366,18 @@ export class HistoryManager {
 
   notifyGenerationAdvance() {
     const branch = this.getCurrentBranch();
-    if (branch) {
-      branch.currentGeneration = this.engine.generation;
-      if (this.isBrowsingHistory) {
-        this.isBrowsingHistory = false;
-        this.browsingGeneration = null;
-      }
-      eventBus.emit('timeline:changed', this._getTimelineData());
+    if (!branch) return;
+    
+    if (this.isBrowsingHistory && this._jumpSnapshotGen !== undefined) {
+      branch.trimSnapshotsAfter(this._jumpSnapshotGen);
+      this._jumpSnapshotGen = undefined;
     }
+    
+    branch.currentGeneration = this.engine.generation;
+    if (this.isBrowsingHistory) {
+      this.isBrowsingHistory = false;
+      this.browsingGeneration = null;
+    }
+    eventBus.emit('timeline:changed', this._getTimelineData());
   }
 }
