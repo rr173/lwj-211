@@ -43,6 +43,28 @@ export class UIManager {
   }
 
   bindUIEvents() {
+    document.querySelectorAll('.panel-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabName = tab.dataset.tab;
+        const panel = tab.closest('.panel');
+        if (!panel) return;
+        
+        panel.querySelectorAll('.panel-tab').forEach(t => {
+          t.classList.toggle('active', t === tab);
+        });
+        
+        panel.querySelectorAll('.panel-tab-content').forEach(content => {
+          content.classList.toggle('active', content.dataset.tab === tabName);
+        });
+        
+        if (tabName === 'arena') {
+          if (window.__app?.arenaUI) {
+            window.__app.arenaUI.renderArena();
+          }
+        }
+      });
+    });
+
     document.getElementById('add-rule-btn').addEventListener('click', () => this.addRuleFromForm());
     
     document.getElementById('quick-rule-btn').addEventListener('click', () => {

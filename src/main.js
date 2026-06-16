@@ -9,6 +9,10 @@ import { Renderer } from './rendering/Renderer.js';
 import { InputHandler } from './input/InputHandler.js';
 import { UIManager } from './ui/UIManager.js';
 import { eventBus } from './core/EventBus.js';
+import { GeneLab } from './genetics/GeneLab.js';
+import { GeneLabUI } from './genetics/GeneLabUI.js';
+import { Arena } from './arena/Arena.js';
+import { ArenaUI } from './arena/ArenaUI.js';
 
 function init() {
   const cellStore = new CellStore();
@@ -20,12 +24,18 @@ function init() {
   const historyManager = new HistoryManager(cellStore, colonyManager, engine, resourceField);
   engine.setHistoryManager(historyManager);
 
+  const geneLab = new GeneLab();
+  const arena = new Arena(200, 200);
+
   const canvas = document.getElementById('grid-canvas');
 
   const renderer = new Renderer(canvas, cellStore, viewState, colonyManager, resourceField);
   const inputHandler = new InputHandler(canvas, viewState, cellStore, colonyManager, patternManager, historyManager, resourceField);
   const uiManager = new UIManager(colonyManager, engine, patternManager, cellStore, viewState, historyManager, resourceField);
   uiManager.setRenderer(renderer);
+
+  const geneLabUI = new GeneLabUI(geneLab, 'genelab-container');
+  const arenaUI = new ArenaUI(arena, geneLab, 'arena-container');
 
   window.__app = {
     cellStore,
@@ -37,7 +47,11 @@ function init() {
     historyManager,
     renderer,
     inputHandler,
-    uiManager
+    uiManager,
+    geneLab,
+    arena,
+    geneLabUI,
+    arenaUI
   };
 
   setTimeout(() => {
