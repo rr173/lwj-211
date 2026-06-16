@@ -13,6 +13,7 @@ import { GeneLab } from './genetics/GeneLab.js';
 import { GeneLabUI } from './genetics/GeneLabUI.js';
 import { Arena } from './arena/Arena.js';
 import { ArenaUI } from './arena/ArenaUI.js';
+import { AnalyzerUI } from './analyzer/AnalyzerUI.js';
 
 function init() {
   const cellStore = new CellStore();
@@ -36,6 +37,7 @@ function init() {
 
   const geneLabUI = new GeneLabUI(geneLab, 'genelab-container');
   const arenaUI = new ArenaUI(arena, geneLab, 'arena-container');
+  const analyzerUI = new AnalyzerUI(colonyManager, geneLab, 'analyzer-container');
 
   window.__app = {
     cellStore,
@@ -51,7 +53,8 @@ function init() {
     geneLab,
     arena,
     geneLabUI,
-    arenaUI
+    arenaUI,
+    analyzerUI
   };
 
   setTimeout(() => {
