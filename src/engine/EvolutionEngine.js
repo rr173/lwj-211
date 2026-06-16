@@ -1,5 +1,6 @@
 import { eventBus } from '../core/EventBus.js';
 import { ResourceField } from '../core/ResourceField.js';
+import { CellStore } from '../core/CellStore.js';
 
 const MOORE = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
 const VN = [[0, -1], [1, 0], [0, 1], [-1, 0]];
@@ -159,7 +160,6 @@ export class EvolutionEngine {
           for (const [dx, dy] of VN_OFFSETS) {
             const nx = cellsX[i] + dx;
             const ny = cellsY[i] + dy;
-            const nkey = CellStore.key(nx, ny);
             if (!cellStore.has(nx, ny)) {
               this.resourceField.add(nx, ny, productionRate);
             }
@@ -187,7 +187,7 @@ export class EvolutionEngine {
           for (const [dx, dy] of offsets) {
             const nx = cellsX[i] + dx;
             const ny = cellsY[i] + dy;
-            const nkey = CellStore.key(nx, ny);
+            const nkey = `${nx},${ny}`;
             const neighborCell = cellStore.get(nx, ny);
             if (neighborCell && neighborCell.colonyId !== colony.id) {
               const neighborColony = this.colonyManager.getColony(neighborCell.colonyId);
