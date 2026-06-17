@@ -180,6 +180,16 @@ export class Arena {
       }))
     });
     
+    const replayData = {
+      replayManager: this.engine.replayManager,
+      contestants: this.contestants.map(c => ({
+        colonyId: c.colonyId,
+        name: c.name,
+        color: c.color
+      })),
+      wallGrid: new Uint8Array(this.engine.wallGrid)
+    };
+    
     this.currentMatch = null;
     
     if (this.patternLibrary) {
@@ -193,7 +203,8 @@ export class Arena {
         result,
         state,
         panelData,
-        record
+        record,
+        replayData
       });
     }
   }
@@ -520,6 +531,116 @@ export class Arena {
       tournamentMode: this.tournamentMode,
       engineState: this.engine.getState()
     };
+  }
+
+  renderReplayFrame(canvas, frame, contestantsInfo, wallGrid, options = {}) {
+    const { territoryMode = false } = options;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const w = rect.width;
+    const h = rect.height;
+    const cellSize = Math.min(w / this.width, h / this.height);
+
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = 'rgba(233, 69, 96, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, w, h);
+
+    if (wallGrid) {
+      ctx.fillStyle = '#3a3a3a';
+      for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+          const idx = y * this.width + x;
+          if (wallGrid[idx] === 1) {
+            const sx = x * cellSize;
+            const sy = y * cellSize;
+            ctx.fillRect(sx, sy, cellSize, cellSize);
+          }
+        }
+      }
+    }
+
+    const contestantMap = new Map();
+    for (const c of contestantsInfo) {
+      contestantMap.set(c.colonyId, c);
+    }
+
+    if (territoryMode && frame) {
+      const replayManager = this.engine.replayManager;
+      const blocks = replayManager.computeTerritoryBlocks(frame);
+      const blockSize = replayManager.blockSize;
+
+      for (const block of blocks) {
+        if (block.dominantCid === -1) continue;
+        const contestant = contestantMap.get(block.dominantCid);
+        if (!contestant) continue;
+
+        const alpha = Math.max(0.15, Math.min(1, block.dominantRatio));
+        const color = this._hexToRgb(contestant.color);
+
+        const bx = block.bx * blockSize * cellSize;
+        const by = block.by * blockSize * cellSize;
+        const bw = blockSize * cellSize;
+        const bh = blockSize * cellSize;
+
+        ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
+        ctx.fillRect(bx, by, bw, bh);
+
+        ctx.strokeStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${Math.min(1, alpha + 0.3)})`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+      }
+    } else if (frame) {
+      for (const [colonyId, coords] of frame.cells) {
+        const contestant = contestantMap.get(colonyId);
+        const color = contestant ? contestant.color : '#888';
+        ctx.fillStyle = color;
+
+        for (let i = 0; i < coords.length; i++) {
+          const packed = coords[i];
+          const x = packed & 0xFFFF;
+          const y = (packed >> 16) & 0xFFFF;
+          const sx = x * cellSize;
+          const sy = y * cellSize;
+          ctx.fillRect(sx, sy, cellSize, cellSize);
+        }
+      }
+    }
+
+    ctx.strokeStyle = 'rgba(80, 100, 140, 0.1)';
+    ctx.lineWidth = 1;
+    const gridStep = 20;
+    for (let x = 0; x <= this.width; x += gridStep) {
+      const sx = x * cellSize;
+      ctx.beginPath();
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, h);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= this.height; y += gridStep) {
+      const sy = y * cellSize;
+      ctx.beginPath();
+      ctx.moveTo(0, sy);
+      ctx.lineTo(w, sy);
+      ctx.stroke();
+    }
+  }
+
+  _hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : { r: 136, g: 136, b: 136 };
   }
 
   renderToCanvas(canvas) {

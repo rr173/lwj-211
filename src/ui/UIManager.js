@@ -105,23 +105,29 @@ export class UIManager {
       });
     });
 
-    document.querySelectorAll('.terrain-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const terrainType = btn.dataset.terrain;
-        this.selectTerrain(terrainType);
+    const terrainBtns = document.querySelectorAll('.terrain-btn');
+    if (terrainBtns.length > 0) {
+      terrainBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const terrainType = btn.dataset.terrain;
+          this.selectTerrain(terrainType);
+        });
       });
-    });
+    }
 
-    document.getElementById('clear-terrain-btn').addEventListener('click', () => {
-      if (confirm('确定要清除所有地形吗？')) {
-        if (this.terrainLayer) {
-          this.terrainLayer.clear();
-          this.updatePortalPairList();
-          eventBus.emit('state:updated');
-          eventBus.emit('terrain:changed');
+    const clearTerrainBtn = document.getElementById('clear-terrain-btn');
+    if (clearTerrainBtn) {
+      clearTerrainBtn.addEventListener('click', () => {
+        if (confirm('确定要清除所有地形吗？')) {
+          if (this.terrainLayer) {
+            this.terrainLayer.clear();
+            this.updatePortalPairList();
+            eventBus.emit('state:updated');
+            eventBus.emit('terrain:changed');
+          }
         }
-      }
-    });
+      });
+    }
 
     document.getElementById('step-btn').addEventListener('click', () => this.engine.step());
     document.getElementById('toggle-run-btn').addEventListener('click', () => this.engine.toggleRunning());

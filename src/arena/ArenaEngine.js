@@ -1,3 +1,5 @@
+import { ReplayManager } from './ReplayManager.js';
+
 const MOORE = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
 const VN = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
@@ -19,6 +21,7 @@ export class ArenaEngine {
     this.cellCounts = new Map();
     this.eliminationTimeline = [];
     this.eliminatedColonies = new Set();
+    this.replayManager = new ReplayManager(width, height);
   }
 
   getIndex(x, y) {
@@ -291,6 +294,7 @@ export class ArenaEngine {
     this.generation++;
     this.updateCellCounts();
     this.checkEliminations();
+    this.replayManager.recordFrame(this.generation, this.grid, this.colonyGrid, this.cellCounts);
     
     return this.checkTermination();
   }
@@ -363,11 +367,15 @@ export class ArenaEngine {
   start(callback) {
     this.running = true;
     this.lastStepTime = performance.now();
+    this.replayManager.startRecording(this.contestants);
+    this.updateCellCounts();
+    this.replayManager.recordFrame(0, this.grid, this.colonyGrid, this.cellCounts);
     this.loop(callback);
   }
 
   stop() {
     this.running = false;
+    this.replayManager.stopRecording();
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
@@ -422,6 +430,7 @@ export class ArenaEngine {
     this.generation = 0;
     this.eliminatedColonies.clear();
     this.eliminationTimeline = [];
+    this.replayManager.reset();
     this.updateCellCounts();
   }
 

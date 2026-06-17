@@ -11,6 +11,9 @@ export class ArenaUI {
     this.ctx = null;
     this.renderAnimationId = null;
     this.colonyIdCounter = 0;
+
+    this.replayState = null;
+
     this.init();
   }
 
@@ -197,34 +200,57 @@ export class ArenaUI {
       </div>
       
       <div id="arena-result-modal" class="modal hidden">
-        <div class="modal-content arena-result-content">
+        <div class="modal-content arena-result-content replay-modal">
           <div class="modal-header">
             <span id="arena-result-title">对战结果</span>
             <button id="arena-close-result-btn" class="close-btn">&times;</button>
           </div>
           <div class="modal-body">
-            <div class="result-champion">
-              <div class="result-crown">🏆</div>
-              <div class="result-champion-name" id="result-champion-name">-</div>
-            </div>
-            <div class="result-info">
-              <div class="result-info-item">
-                <span>持续代数:</span>
-                <span id="result-generations">0</span>
+            <div class="replay-summary" id="replay-summary"></div>
+
+            <div class="replay-main-layout">
+              <div class="replay-canvas-section">
+                <div class="replay-canvas-container">
+                  <canvas id="replay-canvas" width="300" height="300"></canvas>
+                </div>
+                <div class="replay-territory-control">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="replay-territory-toggle">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">领地</span>
+                  </label>
+                  <span class="replay-current-gen" id="replay-current-gen">第 0 代</span>
+                </div>
+                <div class="replay-timeline-container">
+                  <div class="replay-event-markers" id="replay-event-markers"></div>
+                  <div class="replay-timeline-track">
+                    <input type="range" id="replay-timeline-slider" min="0" max="0" value="0">
+                  </div>
+                </div>
+                <div class="replay-controls">
+                  <button id="replay-play-btn" class="replay-control-btn">▶ 播放</button>
+                  <div class="replay-speed-group">
+                    <button class="replay-speed-btn active" data-speed="1">1x</button>
+                    <button class="replay-speed-btn" data-speed="2">2x</button>
+                    <button class="replay-speed-btn" data-speed="5">5x</button>
+                    <button class="replay-speed-btn" data-speed="10">10x</button>
+                  </div>
+                </div>
               </div>
-              <div class="result-info-item">
-                <span>最终细胞数:</span>
-                <span id="result-total">0</span>
-              </div>
-            </div>
-            <div class="result-charts">
-              <div class="result-chart-section">
-                <div class="chart-title">细胞占比</div>
-                <canvas id="result-pie-chart" width="200" height="200"></canvas>
-              </div>
-              <div class="result-timeline-section">
-                <div class="chart-title">淘汰时间线</div>
-                <div id="result-timeline" class="result-timeline"></div>
+
+              <div class="replay-charts-section">
+                <div class="replay-chart-block">
+                  <div class="chart-label">细胞数趋势</div>
+                  <canvas id="replay-line-chart" class="replay-chart-canvas"></canvas>
+                </div>
+                <div class="replay-chart-block">
+                  <div class="chart-label">占比变化</div>
+                  <canvas id="replay-area-chart" class="replay-chart-canvas"></canvas>
+                </div>
+                <div class="replay-chart-block">
+                  <div class="chart-label">最近10代增长率</div>
+                  <canvas id="replay-growth-chart" class="replay-chart-canvas"></canvas>
+                </div>
               </div>
             </div>
           </div>
@@ -332,6 +358,512 @@ export class ArenaUI {
         this.hideResultPanel();
       }
     });
+  }
+
+  _bindReplayEvents() {
+    const slider = this.container.querySelector('#replay-timeline-slider');
+    const playBtn = this.container.querySelector('#replay-play-btn');
+    const territoryToggle = this.container.querySelector('#replay-territory-toggle');
+    const speedBtns = this.container.querySelectorAll('.replay-speed-btn');
+
+    if (slider) {
+      slider.addEventListener('input', (e) => {
+        const gen = parseInt(e.target.value);
+        this._jumpToGen(gen);
+      });
+    }
+
+    if (playBtn) {
+      playBtn.addEventListener('click', () => {
+        this._togglePlayback();
+      });
+    }
+
+    if (territoryToggle) {
+      territoryToggle.addEventListener('change', (e) => {
+        if (this.replayState) {
+          this.replayState.territoryMode = e.target.checked;
+          this._refreshReplayCanvas();
+        }
+      });
+    }
+
+    speedBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        speedBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.replayState.speed = parseInt(btn.dataset.speed);
+      });
+    });
+  }
+
+  _togglePlayback() {
+    if (!this.replayState) return;
+
+    this.replayState.isPlaying = !this.replayState.isPlaying;
+    const playBtn = this.container.querySelector('#replay-play-btn');
+
+    if (this.replayState.isPlaying) {
+      playBtn.textContent = '⏸ 暂停';
+      this._startPlayback();
+    } else {
+      playBtn.textContent = '▶ 播放';
+      this._stopPlayback();
+    }
+  }
+
+  _startPlayback() {
+    if (!this.replayState || !this.replayState.isPlaying) return;
+
+    const state = this.replayState;
+    const maxGen = state.replayManager.getTotalGenerations() - 1;
+
+    const tick = () => {
+      if (!state.isPlaying) return;
+
+      state.currentGen += state.speed;
+      if (state.currentGen > maxGen) {
+        state.currentGen = maxGen;
+        state.isPlaying = false;
+        const playBtn = this.container.querySelector('#replay-play-btn');
+        if (playBtn) playBtn.textContent = '▶ 播放';
+      }
+
+      this._jumpToGen(Math.floor(state.currentGen));
+
+      if (state.isPlaying) {
+        state.playbackTimer = setTimeout(tick, 200 / state.speed);
+      }
+    };
+
+    if (state.currentGen >= maxGen) {
+      state.currentGen = 0;
+    }
+    tick();
+  }
+
+  _stopPlayback() {
+    if (this.replayState && this.replayState.playbackTimer) {
+      clearTimeout(this.replayState.playbackTimer);
+      this.replayState.playbackTimer = null;
+    }
+  }
+
+  _jumpToGen(gen) {
+    if (!this.replayState) return;
+
+    const maxGen = this.replayState.replayManager.getTotalGenerations() - 1;
+    gen = Math.max(0, Math.min(maxGen, gen));
+    this.replayState.currentGen = gen;
+
+    const slider = this.container.querySelector('#replay-timeline-slider');
+    if (slider && parseInt(slider.value) !== gen) {
+      slider.value = gen;
+    }
+
+    const genLabel = this.container.querySelector('#replay-current-gen');
+    if (genLabel) {
+      genLabel.textContent = `第 ${gen} 代`;
+    }
+
+    this._refreshReplayCanvas();
+    this._refreshCharts();
+  }
+
+  _refreshReplayCanvas() {
+    if (!this.replayState) return;
+
+    const canvas = this.container.querySelector('#replay-canvas');
+    if (!canvas) return;
+
+    const { replayManager, contestants, wallGrid, currentGen, territoryMode } = this.replayState;
+    const frame = replayManager.getFrame(currentGen);
+
+    this.arena.renderReplayFrame(canvas, frame, contestants, wallGrid, { territoryMode });
+  }
+
+  _renderLineChart(canvas, chartData, currentGen) {
+    const { lineData, totalGens } = chartData;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+
+    let w = rect.width;
+    let h = rect.height;
+    if (w <= 0 || h <= 0) { w = 280; h = 120; }
+
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, w, h);
+
+    const padL = 36, padR = 10, padT = 8, padB = 20;
+    const chartW = w - padL - padR;
+    const chartH = h - padT - padB;
+
+    let maxCount = 0;
+    for (const counts of lineData) {
+      for (const c of counts.values()) {
+        if (c > maxCount) maxCount = c;
+      }
+    }
+    if (maxCount === 0) maxCount = 1;
+
+    ctx.strokeStyle = 'rgba(80, 100, 140, 0.15)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = padT + chartH * (i / 4);
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(padL + chartW, y);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#666';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i <= 4; i++) {
+      const val = Math.round(maxCount * (1 - i / 4));
+      const y = padT + chartH * (i / 4);
+      ctx.fillText(val.toString(), padL - 4, y);
+    }
+
+    const contestantMap = new Map();
+    for (const c of this.replayState.contestants) {
+      contestantMap.set(c.colonyId, c);
+    }
+
+    const sampleRate = Math.max(1, Math.floor(totalGens / 200));
+
+    for (const [cid, contestant] of contestantMap) {
+      ctx.strokeStyle = contestant.color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      let started = false;
+
+      for (let g = 0; g < totalGens; g += sampleRate) {
+        const counts = lineData[g];
+        const count = counts ? (counts.get(cid) || 0) : 0;
+        const x = padL + chartW * (g / Math.max(1, totalGens - 1));
+        const y = padT + chartH * (1 - count / maxCount);
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+
+      const lastG = totalGens - 1;
+      const lastCounts = lineData[lastG];
+      const lastCount = lastCounts ? (lastCounts.get(cid) || 0) : 0;
+      const lx = padL + chartW;
+      const ly = padT + chartH * (1 - lastCount / maxCount);
+      ctx.lineTo(lx, ly);
+      ctx.stroke();
+    }
+
+    const markerX = padL + chartW * (currentGen / Math.max(1, totalGens - 1));
+    ctx.strokeStyle = 'rgba(233, 69, 96, 0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(markerX, padT);
+    ctx.lineTo(markerX, padT + chartH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  _renderAreaChart(canvas, chartData, currentGen) {
+    const { areaData, totalGens } = chartData;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+
+    let w = rect.width;
+    let h = rect.height;
+    if (w <= 0 || h <= 0) { w = 280; h = 120; }
+
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, w, h);
+
+    const padL = 36, padR = 10, padT = 8, padB = 20;
+    const chartW = w - padL - padR;
+    const chartH = h - padT - padB;
+
+    ctx.strokeStyle = 'rgba(80, 100, 140, 0.15)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = padT + chartH * (i / 4);
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(padL + chartW, y);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#666';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i <= 4; i++) {
+      const val = Math.round((1 - i / 4) * 100);
+      const y = padT + chartH * (i / 4);
+      ctx.fillText(val + '%', padL - 4, y);
+    }
+
+    const contestantMap = new Map();
+    for (const c of this.replayState.contestants) {
+      contestantMap.set(c.colonyId, c);
+    }
+
+    const sampleRate = Math.max(1, Math.floor(totalGens / 200));
+    const cids = [...contestantMap.keys()];
+
+    for (let ci = 0; ci < cids.length; ci++) {
+      const cid = cids[ci];
+      const contestant = contestantMap.get(cid);
+      ctx.fillStyle = contestant.color;
+      ctx.beginPath();
+
+      const pointsBottom = [];
+      const pointsTop = [];
+
+      for (let g = 0; g < totalGens; g += sampleRate) {
+        const ratios = areaData[g];
+        let bottomRatio = 0;
+        for (let bi = 0; bi < ci; bi++) {
+          bottomRatio += ratios ? (ratios.get(cids[bi]) || 0) : 0;
+        }
+        const thisRatio = ratios ? (ratios.get(cid) || 0) : 0;
+        const topRatio = bottomRatio + thisRatio;
+        const x = padL + chartW * (g / Math.max(1, totalGens - 1));
+        pointsBottom.push({ x, y: padT + chartH * (1 - bottomRatio) });
+        pointsTop.push({ x, y: padT + chartH * (1 - topRatio) });
+      }
+
+      const lastG = totalGens - 1;
+      const lastRatios = areaData[lastG];
+      let lBottom = 0;
+      for (let bi = 0; bi < ci; bi++) {
+        lBottom += lastRatios ? (lastRatios.get(cids[bi]) || 0) : 0;
+      }
+      const lTop = lBottom + (lastRatios ? (lastRatios.get(cid) || 0) : 0);
+      pointsBottom.push({ x: padL + chartW, y: padT + chartH * (1 - lBottom) });
+      pointsTop.push({ x: padL + chartW, y: padT + chartH * (1 - lTop) });
+
+      if (pointsTop.length > 0) {
+        ctx.moveTo(pointsTop[0].x, pointsTop[0].y);
+        for (let i = 1; i < pointsTop.length; i++) {
+          ctx.lineTo(pointsTop[i].x, pointsTop[i].y);
+        }
+        for (let i = pointsBottom.length - 1; i >= 0; i--) {
+          ctx.lineTo(pointsBottom[i].x, pointsBottom[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    const markerX = padL + chartW * (currentGen / Math.max(1, totalGens - 1));
+    ctx.strokeStyle = 'rgba(233, 69, 96, 0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(markerX, padT);
+    ctx.lineTo(markerX, padT + chartH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  _renderGrowthChart(canvas, currentGen) {
+    const { replayManager, contestants } = this.replayState;
+    const growthRates = replayManager.getGrowthRates(currentGen);
+
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+
+    let w = rect.width;
+    let h = rect.height;
+    if (w <= 0 || h <= 0) { w = 280; h = 120; }
+
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, w, h);
+
+    const padL = 36, padR = 10, padT = 8, padB = 24;
+    const chartW = w - padL - padR;
+    const chartH = h - padT - padB;
+    const midY = padT + chartH / 2;
+
+    ctx.strokeStyle = 'rgba(80, 100, 140, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, midY);
+    ctx.lineTo(padL + chartW, midY);
+    ctx.stroke();
+
+    let maxAbs = 0;
+    for (const rate of growthRates.values()) {
+      maxAbs = Math.max(maxAbs, Math.abs(rate));
+    }
+    maxAbs = Math.max(maxAbs, 1);
+    const scale = (chartH / 2) / maxAbs;
+
+    ctx.fillStyle = '#666';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    const topVal = '+' + Math.round(maxAbs) + '%';
+    const botVal = '-' + Math.round(maxAbs) + '%';
+    ctx.fillText(topVal, padL - 4, padT + 4);
+    ctx.fillText('0%', padL - 4, midY);
+    ctx.fillText(botVal, padL - 4, padT + chartH - 4);
+
+    const barCount = contestants.length;
+    const barGap = 8;
+    const totalGap = barGap * (barCount + 1);
+    const barW = (chartW - totalGap) / barCount;
+
+    contestants.forEach((c, i) => {
+      const rate = growthRates.get(c.colonyId) || 0;
+      const barH = Math.abs(rate) * scale;
+      const x = padL + barGap + i * (barW + barGap);
+      const isPositive = rate >= 0;
+      const y = isPositive ? midY - barH : midY;
+
+      ctx.fillStyle = c.color;
+      ctx.fillRect(x, y, barW, Math.max(1, barH));
+
+      ctx.fillStyle = '#aaa';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const displayRate = (rate >= 0 ? '+' : '') + rate.toFixed(0) + '%';
+      ctx.fillText(displayRate, x + barW / 2, padT + chartH + 2);
+
+      ctx.fillStyle = c.color;
+      const dotY = padT + chartH + 14;
+      ctx.beginPath();
+      ctx.arc(x + barW / 2, dotY, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  _refreshCharts() {
+    if (!this.replayState) return;
+
+    const lineCanvas = this.container.querySelector('#replay-line-chart');
+    const areaCanvas = this.container.querySelector('#replay-area-chart');
+    const growthCanvas = this.container.querySelector('#replay-growth-chart');
+
+    const chartData = this.replayState.chartData;
+    const currentGen = this.replayState.currentGen;
+
+    if (lineCanvas) this._renderLineChart(lineCanvas, chartData, currentGen);
+    if (areaCanvas) this._renderAreaChart(areaCanvas, chartData, currentGen);
+    if (growthCanvas) this._renderGrowthChart(growthCanvas, currentGen);
+  }
+
+  _renderSummary(summary) {
+    const summaryEl = this.container.querySelector('#replay-summary');
+    if (!summaryEl) return;
+
+    const { totalGenerations, champion, eliminationOrder, mostBalancedGen, dominationEvents } = summary;
+
+    const elimHtml = eliminationOrder.length > 0
+      ? eliminationOrder.map(e => `
+          <span class="summary-elim-item" data-gen="${e.generation}">
+            <span class="summary-dot" style="background:${e.color}"></span>
+            ${this.escapeHtml(e.name)}<span class="summary-sub">@${e.generation}代</span>
+          </span>
+        `).join(' → ')
+      : '<span class="summary-none">无</span>';
+
+    const champHtml = champion
+      ? `<span class="summary-champion-name" style="color:${champion.color}">🏆 ${this.escapeHtml(champion.name)}</span>`
+      : '<span class="summary-none">无冠军</span>';
+
+    const balancedHtml = mostBalancedGen > 0
+      ? `<span class="summary-balanced-item" data-gen="${mostBalancedGen}">⚖️ 第${mostBalancedGen}代</span>`
+      : '<span class="summary-none">-</span>';
+
+    summaryEl.innerHTML = `
+      <div class="summary-row">
+        <div class="summary-block">
+          <span class="summary-label">总代数</span>
+          <span class="summary-value">${totalGenerations}</span>
+        </div>
+        <div class="summary-block">
+          <span class="summary-label">冠军</span>
+          <span class="summary-value">${champHtml}</span>
+        </div>
+      </div>
+      <div class="summary-row">
+        <div class="summary-block wide">
+          <span class="summary-label">淘汰顺序</span>
+          <div class="summary-value">${elimHtml}</div>
+        </div>
+      </div>
+      <div class="summary-row">
+        <div class="summary-block">
+          <span class="summary-label">最激烈一代</span>
+          <div class="summary-value">${balancedHtml}</div>
+        </div>
+        <div class="summary-block">
+          <span class="summary-label">首次过半</span>
+          <div class="summary-value">
+            ${dominationEvents.length > 0 ? dominationEvents.map(e => `
+              <span class="summary-dom-item" data-gen="${e.generation}">
+                <span class="summary-dot" style="background:${e.color}"></span>
+                ${this.escapeHtml(e.name)}<span class="summary-sub">@${e.generation}代</span>
+              </span>
+            `).join(' ') : '<span class="summary-none">-</span>'}
+          </div>
+        </div>
+      </div>
+    `;
+
+    summaryEl.querySelectorAll('[data-gen]').forEach(el => {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => {
+        const gen = parseInt(el.dataset.gen);
+        if (!isNaN(gen)) {
+          this._jumpToGen(gen);
+        }
+      });
+    });
+  }
+
+  _renderEventMarkers(summary, maxGen) {
+    const container = this.container.querySelector('#replay-event-markers');
+    if (!container || maxGen <= 0) return;
+
+    const events = [];
+
+    for (const e of summary.eliminationOrder) {
+      events.push({ gen: e.generation, type: 'elim' });
+    }
+    for (const e of summary.dominationEvents) {
+      events.push({ gen: e.generation, type: 'dom' });
+    }
+
+    container.innerHTML = events.map(e => {
+      const left = (e.gen / maxGen) * 100;
+      const color = e.type === 'elim' ? '#e94560' : '#ffd700';
+      const title = e.type === 'elim' ? '淘汰事件' : '首次过半';
+      return `<div class="event-marker event-${e.type}" title="${title}" style="left:${left}%;background:${color}"></div>`;
+    }).join('');
   }
 
   switchTab(tabName) {
@@ -455,36 +987,58 @@ export class ArenaUI {
   }
 
   showResultPanel(data) {
+    this._stopPlayback();
+    this.replayState = null;
+
     const modal = this.container.querySelector('#arena-result-modal');
-    const { panelData } = data;
+    const { panelData, replayData } = data;
     
     this.container.querySelector('#arena-result-title').textContent = panelData.title;
-    
-    const championName = this.container.querySelector('#result-champion-name');
-    championName.textContent = panelData.championName;
-    championName.style.color = panelData.championColor;
-    
-    this.container.querySelector('#result-generations').textContent = panelData.generations;
-    this.container.querySelector('#result-total').textContent = panelData.totalAlive;
-    
     modal.classList.remove('hidden');
-    
-    setTimeout(() => {
-      const pieCanvas = this.container.querySelector('#result-pie-chart');
-      referee.renderPieChart(pieCanvas, panelData.pieChartData);
-      
-      const timelineEl = this.container.querySelector('#result-timeline');
-      referee.renderTimeline(timelineEl, panelData.eliminationTimeline, 
-        data.panelData.pieChartData.map(d => ({
-          colonyId: d.name,
-          name: d.name,
-          color: d.color
-        }))
-      );
-    }, 50);
+
+    if (replayData && replayData.replayManager) {
+      const { replayManager, contestants, wallGrid } = replayData;
+      const maxGen = Math.max(0, replayManager.getTotalGenerations() - 1);
+      const summary = replayManager.getSummary();
+      const chartData = replayManager.getChartData();
+
+      this.replayState = {
+        replayManager,
+        contestants,
+        wallGrid,
+        currentGen: 0,
+        isPlaying: false,
+        speed: 1,
+        territoryMode: false,
+        chartData,
+        playbackTimer: null
+      };
+
+      const slider = this.container.querySelector('#replay-timeline-slider');
+      if (slider) {
+        slider.min = 0;
+        slider.max = maxGen;
+        slider.value = 0;
+      }
+
+      this._bindReplayEvents();
+      this._renderSummary(summary);
+      this._renderEventMarkers(summary, maxGen);
+
+      setTimeout(() => {
+        this._jumpToGen(0);
+      }, 50);
+    } else {
+      setTimeout(() => {
+        const pieCanvas = this.container.querySelector('#result-pie-chart');
+        if (pieCanvas) referee.renderPieChart(pieCanvas, panelData.pieChartData);
+      }, 50);
+    }
   }
 
   hideResultPanel() {
+    this._stopPlayback();
+    this.replayState = null;
     const modal = this.container.querySelector('#arena-result-modal');
     modal.classList.add('hidden');
   }
@@ -670,6 +1224,7 @@ export class ArenaUI {
   }
 
   destroy() {
+    this._stopPlayback();
     this.stopRenderLoop();
   }
 }
