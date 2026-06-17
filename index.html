@@ -89,6 +89,25 @@
           <div id="selected-pattern-info" class="hint"></div>
         </div>
         <div class="panel-section">
+          <div class="section-title">地形编辑</div>
+          <div class="hint" id="terrain-status">选择模式：正常编辑细胞</div>
+          <div class="terrain-buttons">
+            <button class="terrain-btn active" data-terrain="none">✏️ 画笔</button>
+            <button class="terrain-btn" data-terrain="wall">🧱 墙</button>
+            <button class="terrain-btn" data-terrain="portal">🌀 传送门</button>
+            <button class="terrain-btn" data-terrain="speed">⚡ 加速</button>
+            <button class="terrain-btn" data-terrain="ice">❄️ 冰面</button>
+            <button class="terrain-btn" data-terrain="fertile">🌱 沃土</button>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px;">
+            <button id="clear-terrain-btn" class="small-btn">清除地形</button>
+          </div>
+          <div class="section-title" style="margin-top:12px">传送门配对</div>
+          <div id="portal-pair-list" class="portal-pair-list">
+            <div class="hint">暂无配对</div>
+          </div>
+        </div>
+        <div class="panel-section">
           <div class="section-title">RLE导入</div>
           <textarea id="rle-input" placeholder="粘贴RLE格式图案"></textarea>
           <button id="import-rle-btn">导入RLE</button>
@@ -170,6 +189,8 @@
     <div id="right-panel" class="panel">
       <div class="panel-tabs">
         <button class="panel-tab active" data-tab="stats">统计面板</button>
+        <button class="panel-tab" data-tab="library">📚 图鉴</button>
+        <button class="panel-tab" data-tab="analyzer">📊 分析仪</button>
         <button class="panel-tab" data-tab="arena">⚔️ 竞技场</button>
       </div>
       
@@ -214,6 +235,12 @@
             <div id="mutation-history-list" class="modal-body"></div>
           </div>
         </div>
+      </div>
+
+      <div class="panel-tab-content" data-tab="library" id="library-container">
+      </div>
+
+      <div class="panel-tab-content" data-tab="analyzer" id="analyzer-container">
       </div>
       
       <div class="panel-tab-content" data-tab="arena" id="arena-container">

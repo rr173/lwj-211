@@ -5,6 +5,10 @@ import { HistoryManager } from './core/HistoryManager.js';
 import { ResourceField } from './core/ResourceField.js';
 import { EvolutionEngine } from './engine/EvolutionEngine.js';
 import { PatternManager } from './engine/PatternManager.js';
+import { PatternLibrary } from './patterns/PatternLibrary.js';
+import { PatternLibraryUI } from './patterns/PatternLibraryUI.js';
+import { AnalyzerUI } from './analyzer/AnalyzerUI.js';
+import { TerrainLayer } from './terrain/TerrainLayer.js';
 import { Renderer } from './rendering/Renderer.js';
 import { InputHandler } from './input/InputHandler.js';
 import { UIManager } from './ui/UIManager.js';
@@ -20,21 +24,26 @@ function init() {
   const viewState = new ViewState();
   const resourceField = new ResourceField();
   const patternManager = new PatternManager(cellStore, colonyManager);
+  const patternLibrary = new PatternLibrary();
+  const terrainLayer = new TerrainLayer();
   const engine = new EvolutionEngine(cellStore, colonyManager, resourceField);
   const historyManager = new HistoryManager(cellStore, colonyManager, engine, resourceField);
   engine.setHistoryManager(historyManager);
 
   const geneLab = new GeneLab();
-  const arena = new Arena(200, 200);
+  const arena = new Arena(200, 200, patternLibrary);
 
   const canvas = document.getElementById('grid-canvas');
 
-  const renderer = new Renderer(canvas, cellStore, viewState, colonyManager, resourceField);
-  const inputHandler = new InputHandler(canvas, viewState, cellStore, colonyManager, patternManager, historyManager, resourceField);
-  const uiManager = new UIManager(colonyManager, engine, patternManager, cellStore, viewState, historyManager, resourceField);
+  const renderer = new Renderer(canvas, cellStore, viewState, colonyManager, resourceField, terrainLayer);
+  const inputHandler = new InputHandler(canvas, viewState, cellStore, colonyManager, patternManager, historyManager, resourceField, terrainLayer);
+  const uiManager = new UIManager(colonyManager, engine, patternManager, cellStore, viewState, historyManager, resourceField, patternLibrary, terrainLayer);
   uiManager.setRenderer(renderer);
+  inputHandler.setTerrainLayer(terrainLayer);
 
   const geneLabUI = new GeneLabUI(geneLab, 'genelab-container');
+  const patternLibraryUI = new PatternLibraryUI(patternLibrary, patternManager, 'library-container');
+  const analyzerUI = new AnalyzerUI(colonyManager, geneLab, 'analyzer-container');
   const arenaUI = new ArenaUI(arena, geneLab, 'arena-container');
 
   window.__app = {
@@ -43,6 +52,8 @@ function init() {
     viewState,
     resourceField,
     patternManager,
+    patternLibrary,
+    terrainLayer,
     engine,
     historyManager,
     renderer,
@@ -51,6 +62,8 @@ function init() {
     geneLab,
     arena,
     geneLabUI,
+    patternLibraryUI,
+    analyzerUI,
     arenaUI
   };
 
