@@ -1,7 +1,7 @@
 import { eventBus } from '../core/EventBus.js';
 
 export class InputHandler {
-  constructor(canvas, viewState, cellStore, colonyManager, patternManager, historyManager = null, resourceField = null) {
+  constructor(canvas, viewState, cellStore, colonyManager, patternManager, historyManager = null, resourceField = null, terrainLayer = null) {
     this.canvas = canvas;
     this.viewState = viewState;
     this.cellStore = cellStore;
@@ -9,6 +9,7 @@ export class InputHandler {
     this.patternManager = patternManager;
     this.historyManager = historyManager;
     this.resourceField = resourceField;
+    this.terrainLayer = terrainLayer;
 
     this.isDragging = false;
     this.isPanning = false;
@@ -18,12 +19,17 @@ export class InputHandler {
     this.lastPanY = 0;
     this.placingPattern = null;
     this._forkedOnThisDraw = false;
+    this.selectedTerrain = 'none';
 
     this.bindEvents();
   }
 
   setHistoryManager(hm) {
     this.historyManager = hm;
+  }
+
+  setTerrainLayer(tl) {
+    this.terrainLayer = tl;
   }
 
   bindEvents() {
@@ -42,6 +48,13 @@ export class InputHandler {
     });
     eventBus.on('pattern:placed', () => {
       this.placingPattern = null;
+    });
+
+    eventBus.on('terrain:selected', (type) => {
+      this.selectedTerrain = type;
+      if (this.terrainLayer && type !== 'portal') {
+        this.terrainLayer.cancelPendingPortal();
+      }
     });
 
     document.addEventListener('keydown', (e) => this.onKeyDown(e));
@@ -94,6 +107,14 @@ export class InputHandler {
       return;
     }
 
+    if (this.selectedTerrain !== 'none' && this.terrainLayer) {
+      this.isDrawing = true;
+      this.drawMode = e.button === 0 ? 'draw' : 'erase';
+      this._forkedOnThisDraw = false;
+      this.applyTerrainAction(world.x, world.y);
+      return;
+    }
+
     if (e.button === 0 || e.button === 2) {
       this.isDrawing = true;
       this.drawMode = e.button === 0 ? 'draw' : 'erase';
@@ -120,7 +141,11 @@ export class InputHandler {
     eventBus.emit('mouse:hover', world);
 
     if (this.isDrawing) {
-      this.applyDrawAction(world.x, world.y);
+      if (this.selectedTerrain !== 'none' && this.terrainLayer) {
+        this.applyTerrainAction(world.x, world.y);
+      } else {
+        this.applyDrawAction(world.x, world.y);
+      }
     }
   }
 
@@ -133,6 +158,7 @@ export class InputHandler {
       this.isDrawing = false;
       this.drawMode = null;
       eventBus.emit('state:updated');
+      eventBus.emit('terrain:changed');
     }
   }
 
@@ -142,6 +168,7 @@ export class InputHandler {
       this.isDrawing = false;
       this.drawMode = null;
       eventBus.emit('state:updated');
+      eventBus.emit('terrain:changed');
     }
   }
 
@@ -167,6 +194,41 @@ export class InputHandler {
       this.cellStore.delete(x, y);
     }
     eventBus.emit('state:updated');
+  }
+
+  applyTerrainAction(x, y) {
+    if (!this.terrainLayer) return;
+
+    this._triggerForkIfNeeded();
+
+    const gx = Math.floor(x);
+    const gy = Math.floor(y);
+
+    if (this.drawMode === 'erase') {
+      this.terrainLayer.remove(gx, gy);
+      eventBus.emit('state:updated');
+      return;
+    }
+
+    if (this.drawMode === 'draw') {
+      if (this.selectedTerrain === 'portal') {
+        const result = this.terrainLayer.placePortal(gx, gy);
+        if (result && result.paired) {
+          eventBus.emit('terrain:portalPaired', result);
+        }
+        eventBus.emit('state:updated');
+        eventBus.emit('terrain:changed');
+      } else {
+        const terrainType = this.selectedTerrain;
+        if (terrainType === 'wall' || terrainType === 'speed' || terrainType === 'ice' || terrainType === 'fertile') {
+          this.terrainLayer.set(gx, gy, terrainType);
+          if (terrainType === 'wall') {
+            this.cellStore.delete(gx, gy);
+          }
+          eventBus.emit('state:updated');
+        }
+      }
+    }
   }
 
   _triggerForkIfNeeded() {

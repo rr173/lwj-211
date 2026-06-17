@@ -11,6 +11,7 @@
     <div id="left-panel" class="panel">
       <div class="panel-tabs">
         <button class="panel-tab active" data-tab="rules">规则面板</button>
+        <button class="panel-tab" data-tab="terrain">🗺️ 地形</button>
         <button class="panel-tab" data-tab="genelab">🧬 基因实验室</button>
       </div>
       
@@ -114,6 +115,53 @@
             <div id="branch-compare-info" class="hint">已选择 0/2 个分支</div>
             <button id="start-compare-btn" disabled>进入对比模式</button>
           </div>
+        </div>
+      </div>
+      
+      <div class="panel-tab-content" data-tab="terrain">
+        <div class="panel-header">
+          <h3>地形编辑器</h3>
+        </div>
+        <div class="panel-section">
+          <div class="section-title">地形类型</div>
+          <div class="terrain-buttons">
+            <button class="terrain-btn active" data-terrain="none" title="选择模式">
+              <span class="terrain-icon terrain-icon-none">✋</span>
+              <span class="terrain-name">选择</span>
+            </button>
+            <button class="terrain-btn" data-terrain="wall" title="墙壁 - 阻挡细胞和邻居">
+              <span class="terrain-icon terrain-icon-wall">■</span>
+              <span class="terrain-name">墙壁</span>
+            </button>
+            <button class="terrain-btn" data-terrain="portal" title="传送门 - 成对出现，重定向新生细胞">
+              <span class="terrain-icon terrain-icon-portal">◎</span>
+              <span class="terrain-name">传送门</span>
+            </button>
+            <button class="terrain-btn" data-terrain="speed" title="加速区 - 演化速度x2">
+              <span class="terrain-icon terrain-icon-speed">⚡</span>
+              <span class="terrain-name">加速区</span>
+            </button>
+            <button class="terrain-btn" data-terrain="ice" title="冰冻区 - 演化速度x0.5">
+              <span class="terrain-icon terrain-icon-ice">❄</span>
+              <span class="terrain-name">冰冻区</span>
+            </button>
+            <button class="terrain-btn" data-terrain="fertile" title="肥沃区 - 不消耗资源">
+              <span class="terrain-icon terrain-icon-fertile">♣</span>
+              <span class="terrain-name">肥沃区</span>
+            </button>
+          </div>
+          <div id="terrain-status" class="hint">左键绘制，右键擦除</div>
+        </div>
+        <div class="panel-section">
+          <div class="section-title">传送门配对</div>
+          <div id="portal-pair-list" class="portal-pair-list">
+            <div class="hint">暂无配对</div>
+          </div>
+          <div class="hint">点击两次放置一对传送门，最多10对</div>
+        </div>
+        <div class="panel-section">
+          <div class="section-title">操作</div>
+          <button id="clear-terrain-btn" class="danger-btn">清除所有地形</button>
         </div>
       </div>
       

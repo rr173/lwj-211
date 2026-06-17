@@ -3,9 +3,10 @@ import { Rule, PRESET_RULES } from '../core/Rule.js';
 import { Colony } from '../core/Colony.js';
 import { ResourceField } from '../core/ResourceField.js';
 import { parseRLE } from '../engine/PatternManager.js';
+import { TerrainLayer } from '../terrain/TerrainLayer.js';
 
 export class UIManager {
-  constructor(colonyManager, engine, patternManager, cellStore, viewState, historyManager = null, resourceField = null, patternLibrary = null) {
+  constructor(colonyManager, engine, patternManager, cellStore, viewState, historyManager = null, resourceField = null, patternLibrary = null, terrainLayer = null) {
     this.colonyManager = colonyManager;
     this.engine = engine;
     this.patternManager = patternManager;
@@ -14,9 +15,11 @@ export class UIManager {
     this.historyManager = historyManager;
     this.resourceField = resourceField;
     this.patternLibrary = patternLibrary;
+    this.terrainLayer = terrainLayer;
 
     this.timelineDragging = false;
     this.selectedForCompare = new Set();
+    this.selectedTerrain = 'none';
 
     this.initPresetColonies();
     this.bindUIEvents();
@@ -33,6 +36,11 @@ export class UIManager {
     this.historyManager = hm;
     this.updateBranchList();
     this.updateTimeline();
+  }
+
+  setTerrainLayer(tl) {
+    this.terrainLayer = tl;
+    this.updatePortalPairList();
   }
 
   initPresetColonies() {
@@ -95,6 +103,24 @@ export class UIManager {
         document.getElementById('selected-pattern-info').textContent = 
           `已选择: ${pattern?.name || patternName}，点击画布放置（ESC取消）`;
       });
+    });
+
+    document.querySelectorAll('.terrain-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const terrainType = btn.dataset.terrain;
+        this.selectTerrain(terrainType);
+      });
+    });
+
+    document.getElementById('clear-terrain-btn').addEventListener('click', () => {
+      if (confirm('确定要清除所有地形吗？')) {
+        if (this.terrainLayer) {
+          this.terrainLayer.clear();
+          this.updatePortalPairList();
+          eventBus.emit('state:updated');
+          eventBus.emit('terrain:changed');
+        }
+      }
     });
 
     document.getElementById('step-btn').addEventListener('click', () => this.engine.step());
@@ -583,6 +609,7 @@ export class UIManager {
       colonies: this.colonyManager.toJSON(),
       cells: this.cellStore.toJSON(),
       resources: this.resourceField ? this.resourceField.toJSON() : null,
+      terrain: this.terrainLayer ? this.terrainLayer.toJSON() : null,
       patternLibrary: this.patternLibrary ? this.patternLibrary.toJSON() : null
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -620,6 +647,13 @@ export class UIManager {
         if (this.resourceField && data.resources) {
           const restored = ResourceField.fromJSON(data.resources);
           this.resourceField.copyFrom(restored);
+        }
+        
+        if (this.terrainLayer && data.terrain) {
+          const restored = TerrainLayer.fromJSON(data.terrain);
+          this.terrainLayer.copyFrom(restored);
+        } else if (this.terrainLayer && !data.terrain) {
+          this.terrainLayer.clear();
         }
         
         if (this.patternLibrary && data.patternLibrary) {
@@ -1189,11 +1223,48 @@ export class UIManager {
     this.updateColonyList();
     this.updateStatusBar();
     this.updateStatsPanel();
+    this.updatePortalPairList();
     if (this.historyManager) {
       this.updateBranchList();
       this.updateTimeline();
       this.updateCompareInfo();
     }
+  }
+
+  selectTerrain(type) {
+    this.selectedTerrain = type;
+    document.querySelectorAll('.terrain-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.terrain === type);
+    });
+    const statusEl = document.getElementById('terrain-status');
+    if (type === 'none') {
+      statusEl.textContent = '选择模式：正常编辑细胞';
+    } else if (type === 'portal') {
+      statusEl.textContent = '传送门模式：左键放置A门，再点击放置B门完成配对';
+    } else {
+      statusEl.textContent = '左键绘制，右键擦除';
+    }
+    eventBus.emit('terrain:selected', type);
+  }
+
+  updatePortalPairList() {
+    const listEl = document.getElementById('portal-pair-list');
+    if (!listEl || !this.terrainLayer) return;
+
+    const pairs = this.terrainLayer.getAllPortalPairs();
+    if (pairs.length === 0) {
+      listEl.innerHTML = '<div class="hint">暂无配对</div>';
+      return;
+    }
+
+    let html = '';
+    for (const pair of pairs) {
+      html += `<div class="portal-pair-item">
+        <span class="portal-pair-id">${pair.id}</span>
+        <span class="portal-pair-coords">A: (${pair.a.x}, ${pair.a.y}) → B: (${pair.b.x}, ${pair.b.y})</span>
+      </div>`;
+    }
+    listEl.innerHTML = html;
   }
 
   escapeHtml(str) {

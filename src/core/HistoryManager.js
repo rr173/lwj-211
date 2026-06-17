@@ -1,9 +1,10 @@
 import { eventBus } from './EventBus.js';
 import { CellStore } from './CellStore.js';
 import { ResourceField } from './ResourceField.js';
+import { TerrainLayer } from '../terrain/TerrainLayer.js';
 
 export class Snapshot {
-  constructor(generation, cellStore, colonyManager, resourceField = null) {
+  constructor(generation, cellStore, colonyManager, resourceField = null, terrainLayer = null) {
     this.generation = generation;
     this.timestamp = Date.now();
     this.cells = cellStore.toJSON();
@@ -19,9 +20,10 @@ export class Snapshot {
       });
     }
     this.resources = resourceField ? resourceField.toJSON() : null;
+    this.terrain = terrainLayer ? terrainLayer.toJSON() : null;
   }
 
-  restoreTo(cellStore, colonyManager, resourceField = null) {
+  restoreTo(cellStore, colonyManager, resourceField = null, terrainLayer = null) {
     cellStore.clear();
     for (const cell of this.cells) {
       cellStore.set(cell.x, cell.y, cell.c);
@@ -40,6 +42,12 @@ export class Snapshot {
     if (resourceField && this.resources) {
       const restored = ResourceField.fromJSON(this.resources);
       resourceField.copyFrom(restored);
+    }
+    if (terrainLayer && this.terrain) {
+      const restored = TerrainLayer.fromJSON(this.terrain);
+      terrainLayer.copyFrom(restored);
+    } else if (terrainLayer && this.terrain === null) {
+      terrainLayer.clear();
     }
   }
 }
@@ -99,11 +107,12 @@ export class Branch {
 }
 
 export class HistoryManager {
-  constructor(cellStore, colonyManager, engine, resourceField = null) {
+  constructor(cellStore, colonyManager, engine, resourceField = null, terrainLayer = null) {
     this.cellStore = cellStore;
     this.colonyManager = colonyManager;
     this.engine = engine;
     this.resourceField = resourceField;
+    this.terrainLayer = terrainLayer;
 
     this.branches = new Map();
     this.currentBranchId = null;
@@ -155,11 +164,12 @@ export class HistoryManager {
     const latestSnap = branch.snapshots.length > 0 ? branch.snapshots[branch.snapshots.length - 1] : null;
 
     if (latestSnap) {
-      latestSnap.restoreTo(this.cellStore, this.colonyManager, this.resourceField);
+      latestSnap.restoreTo(this.cellStore, this.colonyManager, this.resourceField, this.terrainLayer);
       this.engine.generation = latestSnap.generation;
     } else {
       this.cellStore.clear();
       if (this.resourceField) this.resourceField.clear();
+      if (this.terrainLayer) this.terrainLayer.clear();
       this.engine.generation = branch.startGeneration;
     }
 
@@ -202,10 +212,11 @@ export class HistoryManager {
     const name = branchName || this._generateBranchName();
     const newBranch = new Branch(name, newId, snapshot.generation, sourceId);
 
-    const clonedSnapshot = new Snapshot(snapshot.generation, this.cellStore, this.colonyManager, this.resourceField);
+    const clonedSnapshot = new Snapshot(snapshot.generation, this.cellStore, this.colonyManager, this.resourceField, this.terrainLayer);
     clonedSnapshot.cells = JSON.parse(JSON.stringify(snapshot.cells));
     clonedSnapshot.colonyStates = new Map(snapshot.colonyStates);
     clonedSnapshot.resources = snapshot.resources ? JSON.parse(JSON.stringify(snapshot.resources)) : null;
+    clonedSnapshot.terrain = snapshot.terrain ? JSON.parse(JSON.stringify(snapshot.terrain)) : null;
     newBranch.addSnapshot(clonedSnapshot);
 
     this.branches.set(newId, newBranch);
@@ -261,7 +272,7 @@ export class HistoryManager {
 
     if (branch.findExactSnapshot(gen)) return null;
 
-    const snapshot = new Snapshot(gen, this.cellStore, this.colonyManager, this.resourceField);
+    const snapshot = new Snapshot(gen, this.cellStore, this.colonyManager, this.resourceField, this.terrainLayer);
     branch.addSnapshot(snapshot);
     branch.currentGeneration = gen;
 
@@ -279,7 +290,7 @@ export class HistoryManager {
     if (!snapshot) return false;
 
     this.engine.stop();
-    snapshot.restoreTo(this.cellStore, this.colonyManager, this.resourceField);
+    snapshot.restoreTo(this.cellStore, this.colonyManager, this.resourceField, this.terrainLayer);
     this.engine.generation = snapshot.generation;
 
     this.isBrowsingHistory = true;

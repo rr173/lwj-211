@@ -157,6 +157,16 @@ export class ArenaUI {
             </div>
           </div>
           
+          <div class="arena-terrain-section">
+            <div class="section-title">地形模板</div>
+            <div class="arena-terrain-buttons">
+              <button class="terrain-template-btn active" data-template="blank">空白</button>
+              <button class="terrain-template-btn" data-template="fourWalls">四面墙</button>
+              <button class="terrain-template-btn" data-template="centerWall">中心墙</button>
+              <button class="terrain-template-btn" data-template="maze">迷宫</button>
+            </div>
+          </div>
+          
           <div class="arena-controls">
             <button id="arena-start-btn" class="arena-control-btn primary" disabled>开始对战</button>
             <button id="arena-stop-btn" class="arena-control-btn danger" disabled>停止</button>
@@ -251,6 +261,17 @@ export class ArenaUI {
     
     this.container.querySelector('#arena-clear-btn').addEventListener('click', () => {
       this.arena.reset();
+    });
+    
+    this.container.querySelectorAll('.terrain-template-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const template = btn.dataset.template;
+        this.arena.setTerrainTemplate(template);
+        this.container.querySelectorAll('.terrain-template-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.template === template);
+        });
+        this.renderArena();
+      });
     });
     
     this.container.querySelector('#arena-close-result-btn').addEventListener('click', () => {

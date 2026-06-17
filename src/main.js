@@ -17,15 +17,17 @@ import { AnalyzerUI } from './analyzer/AnalyzerUI.js';
 import { PatternLibrary } from './patterns/PatternLibrary.js';
 import { PatternRecognizer } from './patterns/PatternRecognizer.js';
 import { PatternLibraryUI } from './patterns/PatternLibraryUI.js';
+import { TerrainLayer } from './terrain/TerrainLayer.js';
 
 function init() {
   const cellStore = new CellStore();
   const colonyManager = new ColonyManager();
   const viewState = new ViewState();
   const resourceField = new ResourceField();
+  const terrainLayer = new TerrainLayer();
   const patternManager = new PatternManager(cellStore, colonyManager);
-  const engine = new EvolutionEngine(cellStore, colonyManager, resourceField);
-  const historyManager = new HistoryManager(cellStore, colonyManager, engine, resourceField);
+  const engine = new EvolutionEngine(cellStore, colonyManager, resourceField, terrainLayer);
+  const historyManager = new HistoryManager(cellStore, colonyManager, engine, resourceField, terrainLayer);
   engine.setHistoryManager(historyManager);
 
   const patternLibrary = new PatternLibrary();
@@ -36,9 +38,9 @@ function init() {
 
   const canvas = document.getElementById('grid-canvas');
 
-  const renderer = new Renderer(canvas, cellStore, viewState, colonyManager, resourceField);
-  const inputHandler = new InputHandler(canvas, viewState, cellStore, colonyManager, patternManager, historyManager, resourceField);
-  const uiManager = new UIManager(colonyManager, engine, patternManager, cellStore, viewState, historyManager, resourceField, patternLibrary);
+  const renderer = new Renderer(canvas, cellStore, viewState, colonyManager, resourceField, terrainLayer);
+  const inputHandler = new InputHandler(canvas, viewState, cellStore, colonyManager, patternManager, historyManager, resourceField, terrainLayer);
+  const uiManager = new UIManager(colonyManager, engine, patternManager, cellStore, viewState, historyManager, resourceField, patternLibrary, terrainLayer);
   uiManager.setRenderer(renderer);
 
   const geneLabUI = new GeneLabUI(geneLab, 'genelab-container', patternLibrary, patternRecognizer);
@@ -51,6 +53,7 @@ function init() {
     colonyManager,
     viewState,
     resourceField,
+    terrainLayer,
     patternManager,
     engine,
     historyManager,
@@ -66,6 +69,10 @@ function init() {
     arenaUI,
     analyzerUI
   };
+
+  eventBus.on('terrain:changed', () => {
+    uiManager.updatePortalPairList();
+  });
 
   setTimeout(() => {
     resourceField.initialize(viewState, 0.3);

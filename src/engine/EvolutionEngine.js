@@ -6,10 +6,11 @@ const MOORE = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1,
 const VN = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
 export class EvolutionEngine {
-  constructor(cellStore, colonyManager, resourceField = null) {
+  constructor(cellStore, colonyManager, resourceField = null, terrainLayer = null) {
     this.cellStore = cellStore;
     this.colonyManager = colonyManager;
     this.resourceField = resourceField;
+    this.terrainLayer = terrainLayer;
     this.generation = 0;
     this.running = false;
     this.speed = 30;
@@ -105,6 +106,7 @@ export class EvolutionEngine {
 
   step() {
     const cellStore = this.cellStore;
+    const terrain = this.terrainLayer;
     const allColonies = this.colonyManager.getAll();
     const activeColonies = [];
     for (let i = 0; i < allColonies.length; i++) {
@@ -112,6 +114,15 @@ export class EvolutionEngine {
       allColonies[i].prevCount = allColonies[i].currentCount;
     }
     if (activeColonies.length === 0) return;
+
+    if (terrain) {
+      const allCells = cellStore.getAllCells();
+      for (let i = 0; i < allCells.length; i++) {
+        if (terrain.isWall(allCells[i].x, allCells[i].y)) {
+          cellStore.delete(allCells[i].x, allCells[i].y);
+        }
+      }
+    }
 
     const allCells = cellStore.getAllCells();
     const cellCount = allCells.length;
@@ -140,6 +151,9 @@ export class EvolutionEngine {
         if (!colony || colony.paused) continue;
         const consumptionRate = colony.rule.consumptionRate;
         if (consumptionRate > 0) {
+          if (terrain && terrain.isFertileZone(cellsX[i], cellsY[i])) {
+            continue;
+          }
           const remaining = this.resourceField.consume(cellsX[i], cellsY[i], consumptionRate);
           if (remaining === 0 && this.resourceField.get(cellsX[i], cellsY[i]) === 0) {
             starvedCells.add(cellsKey[i]);
@@ -187,6 +201,7 @@ export class EvolutionEngine {
           for (const [dx, dy] of offsets) {
             const nx = cellsX[i] + dx;
             const ny = cellsY[i] + dy;
+            if (terrain && terrain.isWall(nx, ny)) continue;
             const nkey = `${nx},${ny}`;
             const neighborCell = cellStore.get(nx, ny);
             if (neighborCell && neighborCell.colonyId !== colony.id) {
@@ -212,6 +227,161 @@ export class EvolutionEngine {
       }
     }
 
+    const { newMap: firstPassMap, newColonyCounts: firstPassCounts, newCount: firstPassCount } =
+      this._computeEvolutionStep(cellsX, cellsY, cellsKey, cellsColony, cellCount, activeColonies, starvedCells, predationVictims, cellStore);
+
+    let finalMap = firstPassMap;
+    let finalColonyCounts = firstPassCounts;
+    let finalCount = firstPassCount;
+
+    const isOddGen = this.generation % 2 === 0;
+
+    if (terrain && isOddGen) {
+      const tempCells = [];
+      for (const [key, cell] of firstPassMap.entries()) {
+        tempCells.push(cell);
+      }
+      const tx = new Array(tempCells.length);
+      const ty = new Array(tempCells.length);
+      const tkey = new Array(tempCells.length);
+      const tcol = new Array(tempCells.length);
+      for (let i = 0; i < tempCells.length; i++) {
+        tx[i] = tempCells[i].x;
+        ty[i] = tempCells[i].y;
+        tkey[i] = CellStore.key(tempCells[i].x, tempCells[i].y);
+        tcol[i] = tempCells[i].colonyId;
+      }
+
+      const { newMap: speedMap, newColonyCounts: speedCounts, newCount: speedCount } =
+        this._computeEvolutionStep(tx, ty, tkey, tcol, tempCells.length, activeColonies, new Set(), new Set(), null, 'speed');
+
+      const mergedMap = new Map(firstPassMap);
+      const mergedCounts = new Map(firstPassCounts);
+
+      for (const [key, cell] of speedMap.entries()) {
+        const comma = key.indexOf(',');
+        const x = +key.slice(0, comma);
+        const y = +key.slice(comma + 1);
+        if (terrain.isSpeedZone(x, y)) {
+          const existing = mergedMap.get(key);
+          if (existing) {
+            mergedCounts.set(existing.colonyId, (mergedCounts.get(existing.colonyId) || 1) - 1);
+          }
+          mergedMap.set(key, cell);
+          mergedCounts.set(cell.colonyId, (mergedCounts.get(cell.colonyId) || 0) + 1);
+        }
+      }
+
+      let mergedCount = 0;
+      for (const v of mergedCounts.values()) mergedCount += v;
+
+      finalMap = mergedMap;
+      finalColonyCounts = mergedCounts;
+      finalCount = mergedCount;
+    }
+
+    if (terrain) {
+      const iceMap = new Map();
+      const iceCounts = new Map();
+      for (const [key, cell] of finalMap.entries()) {
+        const comma = key.indexOf(',');
+        const x = +key.slice(0, comma);
+        const y = +key.slice(comma + 1);
+        if (terrain.isIceZone(x, y)) {
+          if (this.generation % 2 !== 0) {
+            const oldCell = cellStore.get(x, y);
+            if (oldCell) {
+              iceMap.set(key, oldCell);
+              iceCounts.set(oldCell.colonyId, (iceCounts.get(oldCell.colonyId) || 0) + 1);
+            }
+          } else {
+            iceMap.set(key, cell);
+            iceCounts.set(cell.colonyId, (iceCounts.get(cell.colonyId) || 0) + 1);
+          }
+        } else {
+          iceMap.set(key, cell);
+          iceCounts.set(cell.colonyId, (iceCounts.get(cell.colonyId) || 0) + 1);
+        }
+      }
+
+      let iceTotal = 0;
+      for (const v of iceCounts.values()) iceTotal += v;
+
+      finalMap = iceMap;
+      finalColonyCounts = iceCounts;
+      finalCount = iceTotal;
+    }
+
+    const pausedIds = {};
+    for (let i = 0; i < allColonies.length; i++) {
+      if (allColonies[i].paused) pausedIds[allColonies[i].id] = true;
+    }
+
+    for (let i = 0; i < cellCount; i++) {
+      if (pausedIds[cellsColony[i]]) {
+        const key = cellsKey[i];
+        if (!finalMap.has(key)) {
+          const cell = cellStore.get(cellsX[i], cellsY[i]);
+          if (cell) {
+            finalMap.set(key, cell);
+            finalCount++;
+            finalColonyCounts.set(cellsColony[i], (finalColonyCounts.get(cellsColony[i]) || 0) + 1);
+          }
+        }
+      }
+    }
+
+    cellStore.map = finalMap;
+    cellStore.count = finalCount;
+    cellStore.colonyCounts = finalColonyCounts;
+    cellStore._cellsCache = null;
+    cellStore._keysCache = null;
+
+    for (let i = 0; i < allColonies.length; i++) {
+      allColonies[i].currentCount = cellStore.countByColony(allColonies[i].id);
+      if (!allColonies[i].paused) {
+        allColonies[i].recordGrowthRate();
+      }
+    }
+
+    const nextGeneration = this.generation + 1;
+    for (const colony of activeColonies) {
+      if (colony.shouldCheckMutation(nextGeneration)) {
+        const avgGrowth = colony.getAverageGrowthRate(100);
+        if (avgGrowth < -5) {
+          const mutationResult = colony.applyRandomMutation();
+          if (mutationResult) {
+            colony.recordMutation(nextGeneration, mutationResult.oldBS, mutationResult.newBS);
+          }
+        }
+      }
+    }
+
+    if (this.resourceField) {
+      const resourcesAfter = this.resourceField.getTotalResources();
+      this.resourceNetChange = resourcesAfter - resourcesBefore;
+      this.resourceField.lastNetChange = this.resourceNetChange;
+      this.prevTotalResources = resourcesAfter;
+      this.totalResourcesHistory.push({ generation: nextGeneration, total: resourcesAfter });
+      if (this.totalResourcesHistory.length > this.maxHistoryLength) {
+        this.totalResourcesHistory.shift();
+      }
+    }
+
+    this.generation = nextGeneration;
+    this.recordHistory();
+
+    if (this.historyManager) {
+      this.historyManager.notifyGenerationAdvance();
+      this.historyManager.saveSnapshot(false);
+    }
+
+    eventBus.emit('state:updated');
+    eventBus.emit('generation:changed', this.generation);
+  }
+
+  _computeEvolutionStep(cellsX, cellsY, cellsKey, cellsColony, cellCount, activeColonies, starvedCells, predationVictims, cellStore, mode = 'normal') {
+    const terrain = this.terrainLayer;
     const neighborMap = {};
 
     for (let ai = 0; ai < activeColonies.length; ai++) {
@@ -230,6 +400,7 @@ export class EvolutionEngine {
         for (let ni = 0; ni < nbLen; ni++) {
           const nx = cellx + offsets[ni][0];
           const ny = celly + offsets[ni][1];
+          if (terrain && terrain.isWall(nx, ny)) continue;
           const key = nx + ',' + ny;
           let counts = neighborMap[key];
           if (!counts) {
@@ -240,10 +411,6 @@ export class EvolutionEngine {
         }
       }
     }
-
-    const newMap = new Map();
-    const newColonyCounts = new Map();
-    let newCount = 0;
 
     const candidates = {};
 
@@ -267,9 +434,9 @@ export class EvolutionEngine {
       }
     }
 
-    const existingMap = cellStore.map;
+    const existingMap = cellStore ? cellStore.map : null;
     for (const key in neighborMap) {
-      if (existingMap.has(key)) {
+      if (existingMap && existingMap.has(key)) {
         if (starvedCells.has(key) || predationVictims.has(key)) {
         } else {
           continue;
@@ -280,15 +447,34 @@ export class EvolutionEngine {
       const x = +key.slice(0, comma);
       const y = +key.slice(comma + 1);
 
+      if (terrain && terrain.isWall(x, y)) continue;
+
+      let targetX = x;
+      let targetY = y;
+      let targetKey = key;
+
+      if (terrain && terrain.isPortal(x, y)) {
+        const partner = terrain.getPortalPartner(x, y);
+        if (partner && !terrain.isWall(partner.x, partner.y)) {
+          targetX = partner.x;
+          targetY = partner.y;
+          targetKey = CellStore.key(partner.x, partner.y);
+        }
+      }
+
       for (let ai = 0; ai < activeColonies.length; ai++) {
         const colony = activeColonies[ai];
         const n = counts[colony.id] || 0;
         if (colony.rule.birth.has(n)) {
-          if (!candidates[key]) candidates[key] = [];
-          candidates[key].push({ x, y, cid: colony.id, colony, n, birth: 1 });
+          if (!candidates[targetKey]) candidates[targetKey] = [];
+          candidates[targetKey].push({ x: targetX, y: targetY, cid: colony.id, colony, n, birth: 1 });
         }
       }
     }
+
+    const newMap = new Map();
+    const newColonyCounts = new Map();
+    let newCount = 0;
 
     const strategy = this.collisionStrategy;
 
@@ -343,7 +529,7 @@ export class EvolutionEngine {
               }
             }
           } else if (strategy === 'peace') {
-            const existing = existingMap.get(key);
+            const existing = existingMap ? existingMap.get(key) : null;
             if (existing && !starvedCells.has(key) && !predationVictims.has(key)) {
               for (let i = 0; i < list.length; i++) {
                 const c = list[i];
@@ -367,75 +553,14 @@ export class EvolutionEngine {
       }
 
       if (winner) {
+        if (terrain && terrain.isWall(winner.x, winner.y)) continue;
         newMap.set(key, { x: winner.x, y: winner.y, colonyId: winner.cid });
         newCount++;
         newColonyCounts.set(winner.cid, (newColonyCounts.get(winner.cid) || 0) + 1);
       }
     }
 
-    const pausedIds = {};
-    for (let i = 0; i < allColonies.length; i++) {
-      if (allColonies[i].paused) pausedIds[allColonies[i].id] = true;
-    }
-
-    for (let i = 0; i < cellCount; i++) {
-      if (pausedIds[cellsColony[i]]) {
-        const key = cellsKey[i];
-        if (!newMap.has(key)) {
-          newMap.set(key, { x: cellsX[i], y: cellsY[i], colonyId: cellsColony[i] });
-          newCount++;
-          newColonyCounts.set(cellsColony[i], (newColonyCounts.get(cellsColony[i]) || 0) + 1);
-        }
-      }
-    }
-
-    cellStore.map = newMap;
-    cellStore.count = newCount;
-    cellStore.colonyCounts = newColonyCounts;
-    cellStore._cellsCache = null;
-    cellStore._keysCache = null;
-
-    for (let i = 0; i < allColonies.length; i++) {
-      allColonies[i].currentCount = cellStore.countByColony(allColonies[i].id);
-      if (!allColonies[i].paused) {
-        allColonies[i].recordGrowthRate();
-      }
-    }
-
-    const nextGeneration = this.generation + 1;
-    for (const colony of activeColonies) {
-      if (colony.shouldCheckMutation(nextGeneration)) {
-        const avgGrowth = colony.getAverageGrowthRate(100);
-        if (avgGrowth < -5) {
-          const mutationResult = colony.applyRandomMutation();
-          if (mutationResult) {
-            colony.recordMutation(nextGeneration, mutationResult.oldBS, mutationResult.newBS);
-          }
-        }
-      }
-    }
-
-    if (this.resourceField) {
-      const resourcesAfter = this.resourceField.getTotalResources();
-      this.resourceNetChange = resourcesAfter - resourcesBefore;
-      this.resourceField.lastNetChange = this.resourceNetChange;
-      this.prevTotalResources = resourcesAfter;
-      this.totalResourcesHistory.push({ generation: nextGeneration, total: resourcesAfter });
-      if (this.totalResourcesHistory.length > this.maxHistoryLength) {
-        this.totalResourcesHistory.shift();
-      }
-    }
-
-    this.generation = nextGeneration;
-    this.recordHistory();
-
-    if (this.historyManager) {
-      this.historyManager.notifyGenerationAdvance();
-      this.historyManager.saveSnapshot(false);
-    }
-
-    eventBus.emit('state:updated');
-    eventBus.emit('generation:changed', this.generation);
+    return { newMap, newColonyCounts, newCount };
   }
 
   recordHistory() {

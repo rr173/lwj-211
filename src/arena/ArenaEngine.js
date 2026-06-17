@@ -9,6 +9,7 @@ export class ArenaEngine {
     this.colonyGrid = new Int32Array(width * height);
     this.nextGrid = new Uint8Array(width * height);
     this.nextColonyGrid = new Int32Array(width * height);
+    this.wallGrid = new Uint8Array(width * height);
     this.contestants = new Map();
     this.generation = 0;
     this.running = false;
@@ -40,8 +41,29 @@ export class ArenaEngine {
   setCell(x, y, alive, colonyId = -1) {
     if (!this.isValid(x, y)) return;
     const idx = this.getIndex(x, y);
+    if (this.wallGrid[idx] === 1) return;
     this.grid[idx] = alive ? 1 : 0;
     this.colonyGrid[idx] = colonyId;
+  }
+
+  setWall(x, y, isWall = true) {
+    if (!this.isValid(x, y)) return;
+    const idx = this.getIndex(x, y);
+    this.wallGrid[idx] = isWall ? 1 : 0;
+    if (isWall) {
+      this.grid[idx] = 0;
+      this.colonyGrid[idx] = -1;
+    }
+  }
+
+  isWall(x, y) {
+    if (!this.isValid(x, y)) return true;
+    const idx = this.getIndex(x, y);
+    return this.wallGrid[idx] === 1;
+  }
+
+  clearWalls() {
+    this.wallGrid.fill(0);
   }
 
   addContestant(colonyId, rule, color, name) {
@@ -69,6 +91,8 @@ export class ArenaEngine {
     let cellsPlaced = 0;
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
+        const idx = this.getIndex(x, y);
+        if (this.wallGrid[idx] === 1) continue;
         if (Math.random() < density) {
           this.setCell(x, y, true, colonyId);
           cellsPlaced++;
@@ -86,13 +110,89 @@ export class ArenaEngine {
         const x = centerX2 + ox;
         const y = centerY2 + oy;
         if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
-          this.setCell(x, y, true, colonyId);
+          const idx = this.getIndex(x, y);
+          if (this.wallGrid[idx] !== 1) {
+            this.setCell(x, y, true, colonyId);
+          }
         }
       }
     }
     
     this.updateCellCounts();
     console.log(`initializePopulation: colonyId=${colonyId}, cellsPlaced=${cellsPlaced}, finalCount=${this.cellCounts.get(colonyId) || 0}`);
+  }
+
+  applyTerrainTemplate(templateName) {
+    this.clearWalls();
+    
+    switch (templateName) {
+      case 'fourWalls':
+        for (let x = 0; x < this.width; x++) {
+          this.setWall(x, 0, true);
+          this.setWall(x, this.height - 1, true);
+        }
+        for (let y = 0; y < this.height; y++) {
+          this.setWall(0, y, true);
+          this.setWall(this.width - 1, y, true);
+        }
+        break;
+        
+      case 'centerWall':
+        const centerX = Math.floor(this.width / 2);
+        const centerY = Math.floor(this.height / 2);
+        const wallSize = Math.floor(this.height * 0.4);
+        const halfWall = Math.floor(wallSize / 2);
+        for (let y = centerY - halfWall; y <= centerY + halfWall; y++) {
+          this.setWall(centerX, y, true);
+        }
+        for (let x = centerX - halfWall; x <= centerX + halfWall; x++) {
+          this.setWall(x, centerY, true);
+        }
+        break;
+        
+      case 'maze':
+        this._generateMaze();
+        break;
+        
+      case 'blank':
+      default:
+        break;
+    }
+  }
+
+  _generateMaze() {
+    const cellSize = 20;
+    const cols = Math.floor(this.width / cellSize);
+    const rows = Math.floor(this.height / cellSize);
+    
+    for (let i = 0; i < cols; i++) {
+      for (let j = 0; j < rows; j++) {
+        const x = i * cellSize;
+        const y = j * cellSize;
+        
+        if (i === 0 || i === cols - 1 || j === 0 || j === rows - 1) {
+          for (let dx = 0; dx < cellSize; dx++) {
+            this.setWall(x + dx, y, true);
+            this.setWall(x + dx, y + cellSize - 1, true);
+          }
+          for (let dy = 0; dy < cellSize; dy++) {
+            this.setWall(x, y + dy, true);
+            this.setWall(x + cellSize - 1, y + dy, true);
+          }
+        } else {
+          if (Math.random() < 0.3) {
+            for (let dx = 0; dx < cellSize; dx++) {
+              this.setWall(x + dx, y, true);
+            }
+          }
+          if (Math.random() < 0.3) {
+            for (let dy = 0; dy < cellSize; dy++) {
+              this.setWall(x, y + dy, true);
+            }
+          }
+        }
+      }
+    }
   }
 
   countNeighbors(x, y, rule) {
@@ -105,9 +205,11 @@ export class ArenaEngine {
       const ny = y + dy;
       if (!this.isValid(nx, ny)) continue;
       
-      const idx = this.getIndex(nx, ny);
-      if (this.grid[idx] === 1) {
-        const cid = this.colonyGrid[idx];
+      const nidx = this.getIndex(nx, ny);
+      if (this.wallGrid[nidx] === 1) continue;
+      
+      if (this.grid[nidx] === 1) {
+        const cid = this.colonyGrid[nidx];
         counts.set(cid, (counts.get(cid) || 0) + 1);
         total++;
       }
@@ -125,6 +227,12 @@ export class ArenaEngine {
     for (let x = 0; x < this.width; x++) {
       for (let y = 0; y < this.height; y++) {
         const idx = this.getIndex(x, y);
+        if (this.wallGrid[idx] === 1) {
+          this.nextGrid[idx] = 0;
+          this.nextColonyGrid[idx] = -1;
+          continue;
+        }
+        
         const isAlive = this.grid[idx] === 1;
         const colonyId = this.colonyGrid[idx];
         

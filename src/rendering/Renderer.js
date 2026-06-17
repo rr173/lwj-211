@@ -2,13 +2,14 @@ import { eventBus } from '../core/EventBus.js';
 import { CellStore } from '../core/CellStore.js';
 
 export class Renderer {
-  constructor(canvas, cellStore, viewState, colonyManager, resourceField = null) {
+  constructor(canvas, cellStore, viewState, colonyManager, resourceField = null, terrainLayer = null) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.cellStore = cellStore;
     this.viewState = viewState;
     this.colonyManager = colonyManager;
     this.resourceField = resourceField;
+    this.terrainLayer = terrainLayer;
     this.dpr = window.devicePixelRatio || 1;
     this.placingPattern = null;
     this.placingCells = null;
@@ -270,6 +271,67 @@ export class Renderer {
     }
   }
 
+  drawTerrain(ctx, customTerrain = null, viewState = this.viewState) {
+    const terrain = customTerrain || this.terrainLayer;
+    if (!terrain) return;
+
+    const { minX, minY, maxX, maxY } = viewState.getVisibleRect();
+    const zoom = viewState.zoom;
+    const offsetX = viewState.offsetX;
+    const offsetY = viewState.offsetY;
+
+    const terrainList = terrain.getTerrainInRect(minX - 1, minY - 1, maxX + 1, maxY + 1);
+    
+    for (const t of terrainList) {
+      const sx = t.x * zoom + offsetX;
+      const sy = t.y * zoom + offsetY;
+      
+      if (t.type === 'wall') {
+        ctx.fillStyle = '#3a3a3a';
+        if (zoom < 2) {
+          ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+        } else {
+          ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
+        }
+      } else if (t.type === 'portal') {
+        ctx.fillStyle = '#9c27b0';
+        if (zoom < 2) {
+          ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+        } else {
+          ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
+        }
+        if (zoom >= 8) {
+          ctx.fillStyle = '#fff';
+          ctx.font = `${Math.floor(zoom * 0.6)}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(t.pairId.toString(), sx + zoom / 2, sy + zoom / 2);
+        }
+      } else if (t.type === 'speed') {
+        ctx.fillStyle = 'rgba(255, 152, 0, 0.4)';
+        if (zoom < 2) {
+          ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+        } else {
+          ctx.fillRect(sx, sy, zoom, zoom);
+        }
+      } else if (t.type === 'ice') {
+        ctx.fillStyle = 'rgba(100, 181, 246, 0.4)';
+        if (zoom < 2) {
+          ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+        } else {
+          ctx.fillRect(sx, sy, zoom, zoom);
+        }
+      } else if (t.type === 'fertile') {
+        ctx.fillStyle = 'rgba(76, 175, 80, 0.4)';
+        if (zoom < 2) {
+          ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+        } else {
+          ctx.fillRect(sx, sy, zoom, zoom);
+        }
+      }
+    }
+  }
+
   drawResourceHeatmap(ctx, customField = null, viewState = this.viewState) {
     const field = customField || this.resourceField;
     if (!field || !field.showHeatmap) return;
@@ -323,6 +385,7 @@ export class Renderer {
 
     this.clear(ctx, width, height);
     this.drawGrid(ctx, customStore, vs);
+    this.drawTerrain(ctx, this.terrainLayer, vs);
     this.drawCells(ctx, customStore, vs);
     this.drawResourceHeatmap(ctx, customResourceField, vs);
   }
@@ -349,6 +412,7 @@ export class Renderer {
 
     this.clear();
     this.drawGrid(this.ctx);
+    this.drawTerrain(this.ctx);
     this.drawCells(this.ctx);
     this.drawResourceHeatmap(this.ctx);
     this.drawHoverCell(this.ctx);

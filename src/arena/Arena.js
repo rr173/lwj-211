@@ -18,6 +18,21 @@ export class Arena {
     this.tournamentResults = [];
     this.dpr = window.devicePixelRatio || 1;
     this.patternLibrary = patternLibrary;
+    this.terrainTemplate = 'blank';
+  }
+
+  setTerrainTemplate(templateName) {
+    this.terrainTemplate = templateName;
+    eventBus.emit('arena:terrainChanged', templateName);
+  }
+
+  getTerrainTemplates() {
+    return [
+      { id: 'blank', name: '空白' },
+      { id: 'fourWalls', name: '四面墙' },
+      { id: 'centerWall', name: '中心墙' },
+      { id: 'maze', name: '迷宫' }
+    ];
   }
 
   addContestant(gene, colonyId) {
@@ -94,8 +109,10 @@ export class Arena {
     }
     
     this.engine.reset();
+    this.engine.applyTerrainTemplate(this.terrainTemplate);
     
     console.log('开始对战，参赛者数量:', this.contestants.length);
+    console.log('地形模板:', this.terrainTemplate);
     
     this.contestants.forEach(contestant => {
       const pos = this.getCornerPosition(contestant.corner);
@@ -526,6 +543,18 @@ export class Arena {
     ctx.strokeRect(0, 0, w, h);
     
     const engine = this.engine;
+    
+    ctx.fillStyle = '#3a3a3a';
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const idx = y * this.width + x;
+        if (engine.wallGrid[idx] === 1) {
+          const sx = x * cellSize;
+          const sy = y * cellSize;
+          ctx.fillRect(sx, sy, cellSize, cellSize);
+        }
+      }
+    }
     
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
