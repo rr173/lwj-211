@@ -30,6 +30,7 @@ export class GeneCardUI {
         </div>
         <span class="gene-bs">${this.rule.toBSString()}</span>
         <div class="gene-card-actions">
+          <button class="gene-discover-btn" title="试跑发现">🔍</button>
           <button class="gene-duplicate-btn" title="复制">⧉</button>
           <button class="gene-delete-btn" title="删除">✕</button>
         </div>
@@ -128,6 +129,11 @@ export class GeneCardUI {
     this.element.querySelector('.neighborhood-toggle-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       this.geneLab.toggleNeighborhood(this.rule.id);
+    });
+    
+    this.element.querySelector('.gene-discover-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      eventBus.emit('genelab:discover', this.rule);
     });
     
     this.element.querySelector('.gene-duplicate-btn').addEventListener('click', (e) => {

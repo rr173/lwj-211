@@ -40,6 +40,29 @@ export class InputHandler {
     eventBus.on('pattern:cancel', () => {
       this.placingPattern = null;
     });
+    eventBus.on('pattern:placed', () => {
+      this.placingPattern = null;
+    });
+
+    document.addEventListener('keydown', (e) => this.onKeyDown(e));
+  }
+
+  onKeyDown(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+      return;
+    }
+
+    if (!this.patternManager.isPlacing()) return;
+
+    if (e.code === 'KeyR') {
+      e.preventDefault();
+      const rotation = this.patternManager.rotatePlacement();
+      eventBus.emit('status:update');
+    } else if (e.code === 'KeyF') {
+      e.preventDefault();
+      const flipped = this.patternManager.flipPlacement();
+      eventBus.emit('status:update');
+    }
   }
 
   getMousePos(e) {

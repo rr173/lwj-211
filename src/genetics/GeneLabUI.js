@@ -1,12 +1,50 @@
 import { GeneCardUI } from './GeneCardUI.js';
 import { eventBus } from '../core/EventBus.js';
+import { findConnectedComponents, normalizeCoordinates, hashStructure, structureToRLE, STRUCTURE_TYPES, getCentroid, coordinateSetEquals } from '../patterns/StructureUtils.js';
+
+const MOORE_OFFSETS = [
+  [-1, -1], [0, -1], [1, -1],
+  [-1, 0],           [1, 0],
+  [-1, 1],  [0, 1],  [1, 1]
+];
+
+function evolveMiniGrid(cells, rule, gridSize) {
+  const cellSet = new Set(cells.map(c => `${c.x},${c.y}`));
+  const neighborMap = new Map();
+  
+  for (const cell of cells) {
+    for (const [dx, dy] of MOORE_OFFSETS) {
+      const nx = cell.x + dx, ny = cell.y + dy;
+      if (nx < 0 || nx >= gridSize || ny < 0 || ny >= gridSize) continue;
+      const key = `${nx},${ny}`;
+      neighborMap.set(key, (neighborMap.get(key) || 0) + 1);
+    }
+  }
+  
+  const newCells = [];
+  
+  for (const [key, count] of neighborMap.entries()) {
+    const [x, y] = key.split(',').map(Number);
+    const alive = cellSet.has(key);
+    
+    if (alive && rule.survival.has(count)) {
+      newCells.push({ x, y });
+    } else if (!alive && rule.birth.has(count)) {
+      newCells.push({ x, y });
+    }
+  }
+  
+  return newCells;
+}
 
 export class GeneLabUI {
-  constructor(geneLab, containerId) {
+  constructor(geneLab, containerId, patternLibrary = null) {
     this.geneLab = geneLab;
     this.containerId = containerId;
     this.container = document.getElementById(containerId);
     this.geneCards = new Map();
+    this.patternLibrary = patternLibrary;
+    this.isRunningDiscovery = false;
     this.init();
   }
 
@@ -52,6 +90,10 @@ export class GeneLabUI {
     
     eventBus.on('genelab:error', (message) => {
       this.showError(message);
+    });
+    
+    eventBus.on('genelab:discover', (rule) => {
+      this.runDiscovery(rule);
     });
   }
 
@@ -176,6 +218,236 @@ export class GeneLabUI {
     }
   }
 
+  async runDiscovery(rule) {
+    if (this.isRunningDiscovery) {
+      this.showError('正在进行另一次试跑，请稍候...');
+      return;
+    }
+    
+    if (!this.patternLibrary) {
+      this.showError('图鉴系统未初始化');
+      return;
+    }
+    
+    this.isRunningDiscovery = true;
+    const gridSize = 50;
+    const maxGenerations = 500;
+    const density = 0.3;
+    const scanInterval = 10;
+    const trackFrames = {};
+    const discoveredStructures = new Map();
+    let foundCount = 0;
+    
+    this.showToast(`开始试跑 "${rule.name}"，50×50 网格，500代...`);
+    
+    let cells = [];
+    for (let y = 0; y < gridSize; y++) {
+      for (let x = 0; x < gridSize; x++) {
+        if (Math.random() < density) {
+          cells.push({ x, y, colonyId: 0 });
+        }
+      }
+    }
+    
+    for (let gen = 0; gen < maxGenerations; gen++) {
+      cells = evolveMiniGrid(cells, rule, gridSize).map(c => ({ ...c, colonyId: 0 }));
+      
+      if (cells.length === 0) break;
+      
+      if (gen % scanInterval === 0 && gen > 30) {
+        const components = findConnectedComponents(cells);
+        
+        for (const component of components) {
+          if (component.size < 3 || component.size > 100) continue;
+          
+          const { cells: normalizedCells, width, height } = normalizeCoordinates(component.cells);
+          const hash = hashStructure(normalizedCells);
+          
+          if (this.patternLibrary.hasHash(hash) || discoveredStructures.has(hash)) continue;
+          
+          if (!trackFrames[hash]) {
+            trackFrames[hash] = {
+              hash,
+              initialCells: component.cells,
+              normalizedCells,
+              width,
+              height,
+              history: [],
+              centroids: [],
+              startGen: gen,
+              maxPeriodChecked: 0
+            };
+          }
+          
+          const tracker = trackFrames[hash];
+          tracker.history.push(component.cells);
+          tracker.centroids.push(getCentroid(component.cells));
+          
+          if (tracker.history.length >= 60) {
+            const result = this.classifyStructure(tracker, gen);
+            if (result) {
+              discoveredStructures.set(hash, result);
+              delete trackFrames[hash];
+            }
+          }
+        }
+      }
+      
+      if (gen % 100 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    
+    for (const [hash, result] of discoveredStructures) {
+      const entry = {
+        id: 'struct_genelab_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        hash,
+        type: result.type,
+        period: result.period || 1,
+        cellCount: result.cells.length,
+        width: result.width,
+        height: result.height,
+        cells: result.cells,
+        colonyName: rule.name,
+        colonyColor: rule.color,
+        discoveredGeneration: result.discoveredGen,
+        discoveredAt: Date.now(),
+        source: 'genelab',
+        velocity: result.velocity,
+        direction: result.direction,
+        rle: structureToRLE(result.cells),
+        evolutionFrames: result.evolutionFrames
+      };
+      
+      if (this.patternLibrary.addEntry(entry, { skipEvent: false })) {
+        foundCount++;
+      }
+    }
+    
+    this.isRunningDiscovery = false;
+    
+    if (foundCount > 0) {
+      this.showToast(`试跑完成！发现 ${foundCount} 个新结构`);
+    } else {
+      this.showToast('试跑完成，未发现新结构');
+    }
+  }
+  
+  classifyStructure(tracker, currentGen) {
+    const history = tracker.history;
+    if (history.length < 30) return null;
+    
+    const { normalizedCells: baseNorm } = normalizeCoordinates(history[0]);
+    
+    let isStillLife = true;
+    for (let i = 1; i <= Math.min(30, history.length - 1); i++) {
+      const { normalizedCells: norm } = normalizeCoordinates(history[i]);
+      if (!coordinateSetEquals(baseNorm, norm)) {
+        isStillLife = false;
+        break;
+      }
+    }
+    
+    if (isStillLife) {
+      return {
+        type: STRUCTURE_TYPES.STILL_LIFE,
+        period: 1,
+        cells: baseNorm,
+        width: tracker.width,
+        height: tracker.height,
+        discoveredGen: tracker.startGen,
+        evolutionFrames: history.slice(0, 3)
+      };
+    }
+    
+    for (let period = 2; period <= Math.min(60, history.length - 1); period++) {
+      let isOscillator = true;
+      let isSpaceship = true;
+      const translations = [];
+      
+      for (let start = 0; start < history.length - period * 2; start += period) {
+        const cellsA = history[start];
+        const cellsB = history[start + period];
+        
+        const normA = normalizeCoordinates(cellsA);
+        const normB = normalizeCoordinates(cellsB);
+        
+        if (!coordinateSetEquals(normA.cells, normB.cells)) {
+          isOscillator = false;
+          isSpaceship = false;
+          break;
+        }
+        
+        const centroidA = getCentroid(cellsA);
+        const centroidB = getCentroid(cellsB);
+        translations.push({
+          dx: centroidB.x - centroidA.x,
+          dy: centroidB.y - centroidA.y
+        });
+        
+        if (Math.abs(translations[translations.length - 1].dx) > 0.01 || 
+            Math.abs(translations[translations.length - 1].dy) > 0.01) {
+          isOscillator = false;
+        }
+      }
+      
+      if (translations.length >= 2) {
+        if (isOscillator) {
+          return {
+            type: STRUCTURE_TYPES.OSCILLATOR,
+            period,
+            cells: baseNorm,
+            width: tracker.width,
+            height: tracker.height,
+            discoveredGen: tracker.startGen,
+            evolutionFrames: history.slice(0, period * 3)
+          };
+        }
+        
+        if (isSpaceship) {
+          const consistent = translations.every(t => 
+            Math.abs(t.dx - translations[0].dx) < 0.5 && 
+            Math.abs(t.dy - translations[0].dy) < 0.5
+          );
+          
+          if (consistent && (Math.abs(translations[0].dx) > 0.1 || Math.abs(translations[0].dy) > 0.1)) {
+            const velocity = {
+              dx: translations[0].dx / period,
+              dy: translations[0].dy / period
+            };
+            const direction = this.getDirection(translations[0].dx, translations[0].dy);
+            
+            return {
+              type: STRUCTURE_TYPES.SPACESHIP,
+              period,
+              cells: baseNorm,
+              width: tracker.width,
+              height: tracker.height,
+              discoveredGen: tracker.startGen,
+              velocity,
+              direction,
+              evolutionFrames: history.slice(0, period * 3)
+            };
+          }
+        }
+      }
+    }
+    
+    return null;
+  }
+  
+  getDirection(dx, dy) {
+    if (Math.abs(dx) < 0.1 && dy < -0.1) return '上';
+    if (Math.abs(dx) < 0.1 && dy > 0.1) return '下';
+    if (dx > 0.1 && Math.abs(dy) < 0.1) return '右';
+    if (dx < -0.1 && Math.abs(dy) < 0.1) return '左';
+    if (dx > 0.1 && dy < -0.1) return '右上';
+    if (dx < -0.1 && dy < -0.1) return '左上';
+    if (dx > 0.1 && dy > 0.1) return '右下';
+    if (dx < -0.1 && dy > 0.1) return '左下';
+    return '未知';
+  }
+  
   showError(message) {
     const toast = document.createElement('div');
     toast.className = 'gene-toast error';
@@ -204,5 +476,40 @@ export class GeneLabUI {
         }
       }, 300);
     }, 2000);
+  }
+  
+  showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'gene-toast';
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(76, 175, 80, 0.95);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      z-index: 10000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      opacity: 0;
+      transition: opacity 0.3s;
+    `;
+    document.body.appendChild(toast);
+    
+    requestAnimationFrame(() => {
+      toast.style.opacity = '1';
+    });
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 300);
+    }, 2500);
   }
 }

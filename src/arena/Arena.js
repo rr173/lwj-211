@@ -2,9 +2,10 @@ import { ArenaEngine } from './ArenaEngine.js';
 import { referee } from './Referee.js';
 import { eventBus } from '../core/EventBus.js';
 import { CellStore } from '../core/CellStore.js';
+import { findConnectedComponents, normalizeCoordinates, hashStructure, structureToRLE, STRUCTURE_TYPES } from '../patterns/StructureUtils.js';
 
 export class Arena {
-  constructor(width = 200, height = 200) {
+  constructor(width = 200, height = 200, patternLibrary = null) {
     this.width = width;
     this.height = height;
     this.engine = new ArenaEngine(width, height);
@@ -16,6 +17,7 @@ export class Arena {
     this.tournamentBracket = null;
     this.tournamentResults = [];
     this.dpr = window.devicePixelRatio || 1;
+    this.patternLibrary = patternLibrary;
   }
 
   addContestant(gene, colonyId) {
@@ -163,6 +165,10 @@ export class Arena {
     
     this.currentMatch = null;
     
+    if (this.patternLibrary) {
+      this.scanArenaStructures(state);
+    }
+    
     if (this.tournamentMode) {
       this.handleTournamentResult(winner, record);
     } else {
@@ -172,6 +178,66 @@ export class Arena {
         panelData,
         record
       });
+    }
+  }
+  
+  scanArenaStructures(state) {
+    if (!this.patternLibrary) return;
+    
+    const cells = [];
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const idx = y * this.width + x;
+        if (this.engine.grid[idx] === 1) {
+          const colonyId = this.engine.colonyGrid[idx];
+          const contestant = this.contestants.find(c => c.colonyId === colonyId);
+          cells.push({
+            x,
+            y,
+            colonyId,
+            colonyName: contestant?.name || '未知',
+            colonyColor: contestant?.color || '#888888'
+          });
+        }
+      }
+    }
+    
+    if (cells.length === 0) return;
+    
+    const components = findConnectedComponents(cells);
+    
+    for (const component of components) {
+      if (component.size < 3 || component.size > 200) continue;
+      
+      const { cells: normalizedCells, width, height } = normalizeCoordinates(component.cells);
+      const hash = hashStructure(normalizedCells);
+      
+      if (this.patternLibrary.hasHash(hash)) continue;
+      
+      const colonyIds = [...new Set(component.cellObjects.map(c => c.colonyId))];
+      const mainColonyId = colonyIds.length === 1 ? colonyIds[0] : null;
+      const contestant = mainColonyId !== null 
+        ? this.contestants.find(c => c.colonyId === mainColonyId)
+        : null;
+      
+      const entry = {
+        id: 'struct_arena_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        hash,
+        type: STRUCTURE_TYPES.STILL_LIFE,
+        period: 1,
+        cellCount: normalizedCells.length,
+        width,
+        height,
+        cells: normalizedCells,
+        colonyName: contestant?.name || '混合群落',
+        colonyColor: contestant?.color || '#888888',
+        discoveredGeneration: state.generation,
+        discoveredAt: Date.now(),
+        source: 'arena',
+        rle: structureToRLE(normalizedCells)
+      };
+      
+      this.patternLibrary.addEntry(entry, { skipEvent: false });
     }
   }
 

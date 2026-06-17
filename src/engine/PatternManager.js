@@ -1,4 +1,5 @@
 import { eventBus } from '../core/EventBus.js';
+import { transformCells, normalizeCoordinates } from '../patterns/StructureUtils.js';
 
 export const PRESET_PATTERNS = {
   glider: {
@@ -82,6 +83,9 @@ export class PatternManager {
     this.cellStore = cellStore;
     this.colonyManager = colonyManager;
     this.currentPattern = null;
+    this.currentLibraryEntry = null;
+    this.placementRotation = 0;
+    this.placementFlipped = false;
   }
 
   getPattern(name) {
@@ -92,12 +96,76 @@ export class PatternManager {
     const pattern = this.getPattern(name);
     if (pattern) {
       this.currentPattern = name;
+      this.currentLibraryEntry = null;
+      this.placementRotation = 0;
+      this.placementFlipped = false;
       eventBus.emit('pattern:placing', {
         name,
         pattern: pattern.name,
-        cells: pattern.cells
+        cells: pattern.cells,
+        rotation: 0,
+        flipped: false
       });
     }
+  }
+
+  selectLibraryPattern(entry) {
+    if (!entry || !entry.cells) return;
+    
+    this.currentLibraryEntry = entry;
+    this.currentPattern = null;
+    this.placementRotation = 0;
+    this.placementFlipped = false;
+    
+    eventBus.emit('pattern:placing', {
+      name: 'library_' + entry.id,
+      pattern: entry.colonyName,
+      cells: entry.cells,
+      rotation: 0,
+      flipped: false,
+      isLibraryPattern: true,
+      entry
+    });
+  }
+
+  rotatePlacement() {
+    this.placementRotation = (this.placementRotation + 90) % 360;
+    this._emitPlacementUpdate();
+    return this.placementRotation;
+  }
+
+  flipPlacement() {
+    this.placementFlipped = !this.placementFlipped;
+    this._emitPlacementUpdate();
+    return this.placementFlipped;
+  }
+
+  _emitPlacementUpdate() {
+    const cells = this.getCurrentTransformedCells();
+    if (!cells) return;
+    
+    eventBus.emit('pattern:placementTransform', {
+      rotation: this.placementRotation,
+      flipped: this.placementFlipped,
+      cells
+    });
+  }
+
+  getCurrentTransformedCells() {
+    let baseCells = null;
+    
+    if (this.currentLibraryEntry) {
+      baseCells = this.currentLibraryEntry.cells;
+    } else if (this.currentPattern) {
+      const pattern = this.getPattern(this.currentPattern);
+      if (pattern) {
+        baseCells = pattern.cells;
+      }
+    }
+    
+    if (!baseCells) return null;
+    
+    return transformCells(baseCells, this.placementRotation, this.placementFlipped);
   }
 
   placePattern(name, startX, startY) {
@@ -105,15 +173,24 @@ export class PatternManager {
     const colony = this.colonyManager.getSelected();
     if (!pattern || !colony) return;
 
-    for (const [dx, dy] of pattern.cells) {
+    const cells = this.getCurrentTransformedCells() || pattern.cells;
+    
+    for (const [dx, dy] of cells) {
       this.cellStore.set(startX + dx, startY + dy, colony.id);
     }
     this.currentPattern = null;
+    this.currentLibraryEntry = null;
+    this.placementRotation = 0;
+    this.placementFlipped = false;
     eventBus.emit('state:updated');
+    eventBus.emit('pattern:placed');
   }
 
   cancelPlacement() {
     this.currentPattern = null;
+    this.currentLibraryEntry = null;
+    this.placementRotation = 0;
+    this.placementFlipped = false;
     eventBus.emit('pattern:cancel');
   }
 
@@ -125,6 +202,20 @@ export class PatternManager {
       this.cellStore.set(startX + dx, startY + dy, colony.id);
     }
     eventBus.emit('state:updated');
+  }
+
+  isPlacing() {
+    return this.currentPattern !== null || this.currentLibraryEntry !== null;
+  }
+
+  getPlacementInfo() {
+    return {
+      pattern: this.currentPattern,
+      libraryEntry: this.currentLibraryEntry,
+      rotation: this.placementRotation,
+      flipped: this.placementFlipped,
+      cells: this.getCurrentTransformedCells()
+    };
   }
 }
 

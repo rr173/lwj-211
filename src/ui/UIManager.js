@@ -5,7 +5,7 @@ import { ResourceField } from '../core/ResourceField.js';
 import { parseRLE } from '../engine/PatternManager.js';
 
 export class UIManager {
-  constructor(colonyManager, engine, patternManager, cellStore, viewState, historyManager = null, resourceField = null) {
+  constructor(colonyManager, engine, patternManager, cellStore, viewState, historyManager = null, resourceField = null, patternLibrary = null) {
     this.colonyManager = colonyManager;
     this.engine = engine;
     this.patternManager = patternManager;
@@ -13,6 +13,7 @@ export class UIManager {
     this.viewState = viewState;
     this.historyManager = historyManager;
     this.resourceField = resourceField;
+    this.patternLibrary = patternLibrary;
 
     this.timelineDragging = false;
     this.selectedForCompare = new Set();
@@ -581,7 +582,8 @@ export class UIManager {
       engine: this.engine.toJSON(),
       colonies: this.colonyManager.toJSON(),
       cells: this.cellStore.toJSON(),
-      resources: this.resourceField ? this.resourceField.toJSON() : null
+      resources: this.resourceField ? this.resourceField.toJSON() : null,
+      patternLibrary: this.patternLibrary ? this.patternLibrary.toJSON() : null
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -618,6 +620,13 @@ export class UIManager {
         if (this.resourceField && data.resources) {
           const restored = ResourceField.fromJSON(data.resources);
           this.resourceField.copyFrom(restored);
+        }
+        
+        if (this.patternLibrary && data.patternLibrary) {
+          const mergedCount = this.patternLibrary.mergeEntries(data.patternLibrary);
+          if (mergedCount > 0) {
+            this.showToast(`图鉴合并了 ${mergedCount} 个新结构`);
+          }
         }
         
         document.getElementById('collision-strategy').value = this.engine.collisionStrategy;

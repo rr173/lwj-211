@@ -14,6 +14,9 @@ import { GeneLabUI } from './genetics/GeneLabUI.js';
 import { Arena } from './arena/Arena.js';
 import { ArenaUI } from './arena/ArenaUI.js';
 import { AnalyzerUI } from './analyzer/AnalyzerUI.js';
+import { PatternLibrary } from './patterns/PatternLibrary.js';
+import { PatternRecognizer } from './patterns/PatternRecognizer.js';
+import { PatternLibraryUI } from './patterns/PatternLibraryUI.js';
 
 function init() {
   const cellStore = new CellStore();
@@ -25,19 +28,23 @@ function init() {
   const historyManager = new HistoryManager(cellStore, colonyManager, engine, resourceField);
   engine.setHistoryManager(historyManager);
 
+  const patternLibrary = new PatternLibrary();
+  const patternRecognizer = new PatternRecognizer(cellStore, colonyManager, patternLibrary);
+
   const geneLab = new GeneLab();
-  const arena = new Arena(200, 200);
+  const arena = new Arena(200, 200, patternLibrary);
 
   const canvas = document.getElementById('grid-canvas');
 
   const renderer = new Renderer(canvas, cellStore, viewState, colonyManager, resourceField);
   const inputHandler = new InputHandler(canvas, viewState, cellStore, colonyManager, patternManager, historyManager, resourceField);
-  const uiManager = new UIManager(colonyManager, engine, patternManager, cellStore, viewState, historyManager, resourceField);
+  const uiManager = new UIManager(colonyManager, engine, patternManager, cellStore, viewState, historyManager, resourceField, patternLibrary);
   uiManager.setRenderer(renderer);
 
-  const geneLabUI = new GeneLabUI(geneLab, 'genelab-container');
+  const geneLabUI = new GeneLabUI(geneLab, 'genelab-container', patternLibrary);
   const arenaUI = new ArenaUI(arena, geneLab, 'arena-container');
   const analyzerUI = new AnalyzerUI(colonyManager, geneLab, 'analyzer-container');
+  const patternLibraryUI = new PatternLibraryUI(patternLibrary, patternManager, 'library-container');
 
   window.__app = {
     cellStore,
@@ -47,6 +54,9 @@ function init() {
     patternManager,
     engine,
     historyManager,
+    patternLibrary,
+    patternRecognizer,
+    patternLibraryUI,
     renderer,
     inputHandler,
     uiManager,
