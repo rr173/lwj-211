@@ -5,51 +5,9 @@ import {
   hashStructure,
   findConnectedComponents,
   getCentroid,
-  coordinateSetEquals
+  coordinateSetEquals,
+  evolveStructure
 } from './StructureUtils.js';
-
-const MOORE_OFFSETS = [
-  [-1, -1], [0, -1], [1, -1],
-  [-1, 0],           [1, 0],
-  [-1, 1],  [0, 1],  [1, 1]
-];
-
-function getNeighborCount(cells, x, y) {
-  const cellSet = new Set(cells.map(c => `${c[0]},${c[1]}`));
-  let count = 0;
-  for (const [dx, dy] of MOORE_OFFSETS) {
-    if (cellSet.has(`${x + dx},${y + dy}`)) count++;
-  }
-  return count;
-}
-
-function evolveStructure(cells, rule = { birth: new Set([3]), survival: new Set([2, 3]) }) {
-  const cellSet = new Set(cells.map(c => `${c[0]},${c[1]}`));
-  const neighborMap = new Map();
-  
-  for (const [x, y] of cells) {
-    for (const [dx, dy] of MOORE_OFFSETS) {
-      const nx = x + dx, ny = y + dy;
-      const key = `${nx},${ny}`;
-      neighborMap.set(key, (neighborMap.get(key) || 0) + 1);
-    }
-  }
-  
-  const newCells = [];
-  
-  for (const [key, count] of neighborMap.entries()) {
-    const [x, y] = key.split(',').map(Number);
-    const alive = cellSet.has(key);
-    
-    if (alive && rule.survival.has(count)) {
-      newCells.push([x, y]);
-    } else if (!alive && rule.birth.has(count)) {
-      newCells.push([x, y]);
-    }
-  }
-  
-  return newCells;
-}
 
 export class PatternRecognizer {
   constructor(cellStore, colonyManager, patternLibrary) {
@@ -189,11 +147,17 @@ export class PatternRecognizer {
   }
   
   evolveCandidate(candidate, elapsed) {
-    let currentCells = candidate.initialCells;
+    let currentCells;
     
     if (elapsed < candidate.history.length) {
       currentCells = candidate.history[elapsed];
     } else {
+      if (candidate.history.length > 0) {
+        currentCells = candidate.history[candidate.history.length - 1];
+      } else {
+        currentCells = candidate.initialCells;
+      }
+      
       for (let i = candidate.history.length; i <= elapsed && i < 200; i++) {
         const colony = candidate.colonyId ? this.colonyManager.getColony(candidate.colonyId) : null;
         const rule = colony?.rule || { birth: new Set([3]), survival: new Set([2, 3]) };
@@ -218,12 +182,12 @@ export class PatternRecognizer {
   classifyCandidate(candidate, elapsed) {
     if (elapsed < 30) return;
     
-    const { normalizedCells: baseNorm } = normalizeCoordinates(candidate.history[0]);
+    const { cells: baseNorm } = normalizeCoordinates(candidate.history[0]);
     
     if (elapsed >= 30) {
       let isStillLife = true;
       for (let i = 1; i <= Math.min(30, candidate.history.length - 1); i++) {
-        const { normalizedCells: norm } = normalizeCoordinates(candidate.history[i]);
+        const { cells: norm } = normalizeCoordinates(candidate.history[i]);
         if (!coordinateSetEquals(baseNorm, norm)) {
           isStillLife = false;
           break;
@@ -423,10 +387,10 @@ export class PatternRecognizer {
       }
     }
     
-    const { normalizedCells: baseNorm } = normalizeCoordinates(history[0]);
+    const { cells: baseNorm } = normalizeCoordinates(history[0]);
     let isStillLife = true;
     for (let i = 1; i <= Math.min(30, history.length - 1); i++) {
-      const { normalizedCells: norm } = normalizeCoordinates(history[i]);
+      const { cells: norm } = normalizeCoordinates(history[i]);
       if (!coordinateSetEquals(baseNorm, norm)) {
         isStillLife = false;
         break;

@@ -20,6 +20,34 @@ const MOORE_OFFSETS = [
   [-1, 1],  [0, 1],  [1, 1]
 ];
 
+export function evolveStructure(cells, rule = { birth: new Set([3]), survival: new Set([2, 3]) }) {
+  const cellSet = new Set(cells.map(c => `${c[0]},${c[1]}`));
+  const neighborMap = new Map();
+  
+  for (const [x, y] of cells) {
+    for (const [dx, dy] of MOORE_OFFSETS) {
+      const nx = x + dx, ny = y + dy;
+      const key = `${nx},${ny}`;
+      neighborMap.set(key, (neighborMap.get(key) || 0) + 1);
+    }
+  }
+  
+  const newCells = [];
+  
+  for (const [key, count] of neighborMap.entries()) {
+    const [x, y] = key.split(',').map(Number);
+    const alive = cellSet.has(key);
+    
+    if (alive && rule.survival.has(count)) {
+      newCells.push([x, y]);
+    } else if (!alive && rule.birth.has(count)) {
+      newCells.push([x, y]);
+    }
+  }
+  
+  return newCells;
+}
+
 export function normalizeCoordinates(cells) {
   if (cells.length === 0) return { cells: [], width: 0, height: 0, minX: 0, minY: 0 };
   

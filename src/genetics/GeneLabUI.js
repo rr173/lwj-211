@@ -38,12 +38,13 @@ function evolveMiniGrid(cells, rule, gridSize) {
 }
 
 export class GeneLabUI {
-  constructor(geneLab, containerId, patternLibrary = null) {
+  constructor(geneLab, containerId, patternLibrary = null, patternRecognizer = null) {
     this.geneLab = geneLab;
     this.containerId = containerId;
     this.container = document.getElementById(containerId);
     this.geneCards = new Map();
     this.patternLibrary = patternLibrary;
+    this.patternRecognizer = patternRecognizer;
     this.isRunningDiscovery = false;
     this.init();
   }
@@ -234,8 +235,8 @@ export class GeneLabUI {
     const maxGenerations = 500;
     const density = 0.3;
     const scanInterval = 10;
-    const trackFrames = {};
     const discoveredStructures = new Map();
+    const analyzedHashes = new Set();
     let foundCount = 0;
     
     this.showToast(`开始试跑 "${rule.name}"，50×50 网格，500代...`);
@@ -254,41 +255,33 @@ export class GeneLabUI {
       
       if (cells.length === 0) break;
       
-      if (gen % scanInterval === 0 && gen > 30) {
+      if (gen % scanInterval === 0 && gen > 30 && this.patternRecognizer) {
         const components = findConnectedComponents(cells);
         
         for (const component of components) {
           if (component.size < 3 || component.size > 100) continue;
           
-          const { cells: normalizedCells, width, height } = normalizeCoordinates(component.cells);
+          const { cells: normalizedCells } = normalizeCoordinates(component.cells);
           const hash = hashStructure(normalizedCells);
           
-          if (this.patternLibrary.hasHash(hash) || discoveredStructures.has(hash)) continue;
-          
-          if (!trackFrames[hash]) {
-            trackFrames[hash] = {
-              hash,
-              initialCells: component.cells,
-              normalizedCells,
-              width,
-              height,
-              history: [],
-              centroids: [],
-              startGen: gen,
-              maxPeriodChecked: 0
-            };
+          if (this.patternLibrary.hasHash(hash) || 
+              discoveredStructures.has(hash) || 
+              analyzedHashes.has(hash)) {
+            continue;
           }
           
-          const tracker = trackFrames[hash];
-          tracker.history.push(component.cells);
-          tracker.centroids.push(getCentroid(component.cells));
+          analyzedHashes.add(hash);
           
-          if (tracker.history.length >= 60) {
-            const result = this.classifyStructure(tracker, gen);
+          try {
+            const result = await this.patternRecognizer.analyzeComponent(component, rule, 200);
             if (result) {
+              result.discoveredGen = gen;
+              result.width = result.width || normalizeCoordinates(component.cells).width;
+              result.height = result.height || normalizeCoordinates(component.cells).height;
               discoveredStructures.set(hash, result);
-              delete trackFrames[hash];
             }
+          } catch (e) {
+            console.error('分析结构失败:', e);
           }
         }
       }
@@ -337,11 +330,11 @@ export class GeneLabUI {
     const history = tracker.history;
     if (history.length < 30) return null;
     
-    const { normalizedCells: baseNorm } = normalizeCoordinates(history[0]);
+    const { cells: baseNorm } = normalizeCoordinates(history[0]);
     
     let isStillLife = true;
     for (let i = 1; i <= Math.min(30, history.length - 1); i++) {
-      const { normalizedCells: norm } = normalizeCoordinates(history[i]);
+      const { cells: norm } = normalizeCoordinates(history[i]);
       if (!coordinateSetEquals(baseNorm, norm)) {
         isStillLife = false;
         break;

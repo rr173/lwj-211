@@ -41,7 +41,7 @@ function init() {
   const uiManager = new UIManager(colonyManager, engine, patternManager, cellStore, viewState, historyManager, resourceField, patternLibrary);
   uiManager.setRenderer(renderer);
 
-  const geneLabUI = new GeneLabUI(geneLab, 'genelab-container', patternLibrary);
+  const geneLabUI = new GeneLabUI(geneLab, 'genelab-container', patternLibrary, patternRecognizer);
   const arenaUI = new ArenaUI(arena, geneLab, 'arena-container');
   const analyzerUI = new AnalyzerUI(colonyManager, geneLab, 'analyzer-container');
   const patternLibraryUI = new PatternLibraryUI(patternLibrary, patternManager, 'library-container');
