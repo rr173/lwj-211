@@ -7,6 +7,7 @@ import { EvolutionEngine } from './engine/EvolutionEngine.js';
 import { PatternManager } from './engine/PatternManager.js';
 import { PatternLibrary } from './patterns/PatternLibrary.js';
 import { PatternLibraryUI } from './patterns/PatternLibraryUI.js';
+import { PatternRecognizer } from './patterns/PatternRecognizer.js';
 import { AnalyzerUI } from './analyzer/AnalyzerUI.js';
 import { TerrainLayer } from './terrain/TerrainLayer.js';
 import { Renderer } from './rendering/Renderer.js';
@@ -26,6 +27,7 @@ function init() {
   const patternManager = new PatternManager(cellStore, colonyManager);
   const patternLibrary = new PatternLibrary();
   const terrainLayer = new TerrainLayer();
+  const patternRecognizer = new PatternRecognizer(cellStore, colonyManager, patternLibrary);
   const engine = new EvolutionEngine(cellStore, colonyManager, resourceField);
   const historyManager = new HistoryManager(cellStore, colonyManager, engine, resourceField);
   engine.setHistoryManager(historyManager);
@@ -53,6 +55,7 @@ function init() {
     resourceField,
     patternManager,
     patternLibrary,
+    patternRecognizer,
     terrainLayer,
     engine,
     historyManager,
