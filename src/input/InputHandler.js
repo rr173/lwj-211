@@ -1,7 +1,7 @@
 import { eventBus } from '../core/EventBus.js';
 
 export class InputHandler {
-  constructor(canvas, viewState, cellStore, colonyManager, patternManager, historyManager = null, resourceField = null, terrainLayer = null) {
+  constructor(canvas, viewState, cellStore, colonyManager, patternManager, historyManager = null, resourceField = null, terrainLayer = null, blueprintManager = null, blueprintPlacer = null) {
     this.canvas = canvas;
     this.viewState = viewState;
     this.cellStore = cellStore;
@@ -10,6 +10,8 @@ export class InputHandler {
     this.historyManager = historyManager;
     this.resourceField = resourceField;
     this.terrainLayer = terrainLayer;
+    this.blueprintManager = blueprintManager;
+    this.blueprintPlacer = blueprintPlacer;
 
     this.isDragging = false;
     this.isPanning = false;
@@ -21,7 +23,21 @@ export class InputHandler {
     this._forkedOnThisDraw = false;
     this.selectedTerrain = 'none';
 
+    this.isSelectingBlueprint = false;
+    this.selectionStartX = 0;
+    this.selectionStartY = 0;
+    this.selectionEndX = 0;
+    this.selectionEndY = 0;
+
     this.bindEvents();
+  }
+
+  setBlueprintManager(bm) {
+    this.blueprintManager = bm;
+  }
+
+  setBlueprintPlacer(bp) {
+    this.blueprintPlacer = bp;
   }
 
   setHistoryManager(hm) {
@@ -65,6 +81,30 @@ export class InputHandler {
       return;
     }
 
+    if (this.blueprintPlacer && this.blueprintPlacer.isPlacing) {
+      if (e.code === 'KeyR') {
+        e.preventDefault();
+        this.blueprintPlacer.rotate();
+        eventBus.emit('status:update');
+        return;
+      } else if (e.code === 'KeyF') {
+        e.preventDefault();
+        this.blueprintPlacer.flip();
+        eventBus.emit('status:update');
+        return;
+      } else if (e.code === 'Escape') {
+        e.preventDefault();
+        this.blueprintPlacer.cancelPlacement();
+        return;
+      }
+    }
+
+    if (this.isSelectingBlueprint && e.code === 'Escape') {
+      e.preventDefault();
+      this.cancelBlueprintSelection();
+      return;
+    }
+
     if (!this.patternManager.isPlacing()) return;
 
     if (e.code === 'KeyR') {
@@ -90,11 +130,33 @@ export class InputHandler {
     const pos = this.getMousePos(e);
     const world = this.viewState.screenToWorld(pos.x, pos.y);
 
-    if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+    if (e.button === 1) {
       this.isPanning = true;
       this.lastPanX = e.clientX;
       this.lastPanY = e.clientY;
       this.canvas.style.cursor = 'grabbing';
+      return;
+    }
+
+    if (e.button === 0 && e.shiftKey && this.blueprintManager) {
+      this.isSelectingBlueprint = true;
+      this.selectionStartX = world.x;
+      this.selectionStartY = world.y;
+      this.selectionEndX = world.x;
+      this.selectionEndY = world.y;
+      this.canvas.style.cursor = 'crosshair';
+      eventBus.emit('blueprint:selectionStarted', {
+        startX: this.selectionStartX,
+        startY: this.selectionStartY
+      });
+      eventBus.emit('blueprint:selectionUpdated', this.getSelectionRect());
+      return;
+    }
+
+    if (this.blueprintPlacer && this.blueprintPlacer.isPlacing && e.button === 0) {
+      this._triggerForkIfNeeded();
+      this.blueprintPlacer.placeAt(world.x, world.y);
+      eventBus.emit('state:updated');
       return;
     }
 
@@ -138,6 +200,19 @@ export class InputHandler {
       return;
     }
 
+    if (this.isSelectingBlueprint) {
+      this.selectionEndX = world.x;
+      this.selectionEndY = world.y;
+      eventBus.emit('blueprint:selectionUpdated', this.getSelectionRect());
+      return;
+    }
+
+    if (this.blueprintPlacer && this.blueprintPlacer.isPlacing) {
+      this.blueprintPlacer.setMousePosition(world.x, world.y);
+      eventBus.emit('mouse:hover', world);
+      return;
+    }
+
     eventBus.emit('mouse:hover', world);
 
     if (this.isDrawing) {
@@ -150,6 +225,28 @@ export class InputHandler {
   }
 
   onMouseUp(e) {
+    if (this.isSelectingBlueprint) {
+      this.isSelectingBlueprint = false;
+      this.canvas.style.cursor = 'crosshair';
+      
+      const rect = this.getSelectionRect();
+      const cells = this.cellStore.getCellsInRect(rect.minX, rect.minY, rect.maxX, rect.maxY);
+      
+      if (cells.length === 0) {
+        eventBus.emit('blueprint:selectionCancelled');
+        return;
+      }
+      
+      eventBus.emit('blueprint:selectionComplete', {
+        rect,
+        cells,
+        cellCount: cells.length
+      });
+      
+      this._showSaveDialog(cells);
+      return;
+    }
+    
     if (this.isPanning) {
       this.isPanning = false;
       this.canvas.style.cursor = 'crosshair';
@@ -163,6 +260,112 @@ export class InputHandler {
         window.__app.collabManager.flushBatchImmediate();
       }
     }
+  }
+
+  getSelectionRect() {
+    const minX = Math.min(this.selectionStartX, this.selectionEndX);
+    const maxX = Math.max(this.selectionStartX, this.selectionEndX);
+    const minY = Math.min(this.selectionStartY, this.selectionEndY);
+    const maxY = Math.max(this.selectionStartY, this.selectionEndY);
+    return { minX, maxX, minY, maxY };
+  }
+
+  cancelBlueprintSelection() {
+    this.isSelectingBlueprint = false;
+    this.canvas.style.cursor = 'crosshair';
+    eventBus.emit('blueprint:selectionCancelled');
+  }
+
+  _showSaveDialog(cells) {
+    const colony = this.colonyManager.getSelected();
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal blueprint-save-modal';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <div class="modal-header">
+          <span>保存蓝图</span>
+          <button class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <label>蓝图名称</label>
+            <input type="text" id="bp-name-input" placeholder="输入蓝图名称" value="我的蓝图">
+          </div>
+          <div class="form-row">
+            <label>标签（逗号分隔）</label>
+            <input type="text" id="bp-tags-input" placeholder="例如: 滑翔机, 振荡器, 自定义">
+          </div>
+          <div class="form-row">
+            <label>描述</label>
+            <textarea id="bp-desc-input" placeholder="蓝图描述..." rows="3"></textarea>
+          </div>
+          <div class="form-row">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="bp-bind-rule" checked>
+              <span>绑定当前规则（放置时自动使用该群落规则）</span>
+            </label>
+          </div>
+          <div class="blueprint-preview-info">
+            <span>细胞数: <strong>${cells.length}</strong></span>
+            ${colony ? `<span>规则: <strong>${colony.rule.toBSString()}</strong></span>` : ''}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="cancel-btn">取消</button>
+          <button class="primary-btn save-btn">保存</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    const closeModal = () => {
+      modal.remove();
+      eventBus.emit('blueprint:saveDialogClosed');
+    };
+    
+    modal.querySelector('.close-btn').addEventListener('click', closeModal);
+    modal.querySelector('.cancel-btn').addEventListener('click', closeModal);
+    
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+    
+    modal.querySelector('.save-btn').addEventListener('click', () => {
+      const name = modal.querySelector('#bp-name-input').value.trim() || '未命名蓝图';
+      const tagsStr = modal.querySelector('#bp-tags-input').value.trim();
+      const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(t => t) : [];
+      const description = modal.querySelector('#bp-desc-input').value.trim();
+      const bindRule = modal.querySelector('#bp-bind-rule').checked;
+      
+      const cellCoords = cells.map(c => [c.x, c.y]);
+      
+      const boundRule = bindRule && colony ? colony.rule : null;
+      
+      if (this.blueprintManager) {
+        const bp = this.blueprintManager.createBlueprint({
+          cells: cellCoords,
+          name,
+          description,
+          tags,
+          boundRule
+        });
+        
+        if (bp && window.__app && window.__app.uiManager) {
+          window.__app.uiManager.showToast(`蓝图 "${name}" 已保存`);
+        }
+      }
+      
+      closeModal();
+    });
+    
+    setTimeout(() => {
+      modal.querySelector('#bp-name-input').focus();
+      modal.querySelector('#bp-name-input').select();
+    }, 100);
+    
+    eventBus.emit('blueprint:saveDialogOpened');
   }
 
   onMouseLeave(e) {

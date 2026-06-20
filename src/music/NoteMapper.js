@@ -87,7 +87,7 @@ export class NoteMapper {
 
     const allNotes = [];
 
-    for (const [colonyId, rows of notesByColony) {
+    for (const [colonyId, rows] of notesByColony) {
       const colony = this.colonyManager.getColony(colonyId);
       if (!colony || rows.size === 0) continue;
 

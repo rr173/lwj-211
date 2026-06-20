@@ -25,10 +25,57 @@ export class Renderer {
     this.compareCellStores = [null, null];
     this.compareGenerations = [0, 0];
 
+    this.blueprintSelectionRect = null;
+    this.placingBlueprint = null;
+    this.placingBlueprintCells = null;
+    this.placingBlueprintColor = null;
+
     this.setupCanvas();
     this.bindEvents();
     this._bindCollabEvents();
+    this._bindBlueprintEvents();
     this._startAnimationLoop();
+  }
+
+  _bindBlueprintEvents() {
+    eventBus.on('blueprint:selectionStarted', () => {
+      this.render();
+    });
+    eventBus.on('blueprint:selectionUpdated', (rect) => {
+      this.blueprintSelectionRect = rect;
+      this.render();
+    });
+    eventBus.on('blueprint:selectionComplete', () => {
+      this.blueprintSelectionRect = null;
+      this.render();
+    });
+    eventBus.on('blueprint:selectionCancelled', () => {
+      this.blueprintSelectionRect = null;
+      this.render();
+    });
+
+    eventBus.on('blueprint:placing', (data) => {
+      this.placingBlueprint = data.blueprint;
+      this.placingBlueprintCells = data.cells;
+      this.placingBlueprintColor = data.blueprint?.boundRule?.color || null;
+      this.render();
+    });
+    eventBus.on('blueprint:placementUpdated', (data) => {
+      this.placingBlueprintCells = data.cells;
+      this.render();
+    });
+    eventBus.on('blueprint:placementCancelled', () => {
+      this.placingBlueprint = null;
+      this.placingBlueprintCells = null;
+      this.placingBlueprintColor = null;
+      this.render();
+    });
+    eventBus.on('blueprint:placed', () => {
+      this.placingBlueprint = null;
+      this.placingBlueprintCells = null;
+      this.placingBlueprintColor = null;
+      this.render();
+    });
   }
 
   _bindCollabEvents() {
@@ -341,6 +388,56 @@ export class Renderer {
     }
   }
 
+  drawBlueprintSelection(ctx, viewState = this.viewState) {
+    if (!this.blueprintSelectionRect) return;
+
+    const { minX, maxX, minY, maxY } = this.blueprintSelectionRect;
+    const zoom = viewState.zoom;
+    const offsetX = viewState.offsetX;
+    const offsetY = viewState.offsetY;
+
+    const sx = minX * zoom + offsetX;
+    const sy = minY * zoom + offsetY;
+    const sw = (maxX - minX + 1) * zoom;
+    const sh = (maxY - minY + 1) * zoom;
+
+    ctx.fillStyle = 'rgba(79, 195, 247, 0.15)';
+    ctx.fillRect(sx, sy, sw, sh);
+
+    ctx.strokeStyle = '#4fc3f7';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2);
+    ctx.setLineDash([]);
+  }
+
+  drawPlacingBlueprint(ctx, viewState = this.viewState) {
+    if (!this.placingBlueprintCells || !this.hoverCell) return;
+
+    const zoom = viewState.zoom;
+    const offsetX = viewState.offsetX;
+    const offsetY = viewState.offsetY;
+    const baseX = this.hoverCell.x;
+    const baseY = this.hoverCell.y;
+
+    const color = this.placingBlueprintColor || 
+      (this.colonyManager.getSelected()?.color) || 
+      '#4fc3f7';
+
+    ctx.fillStyle = color + '80';
+    for (const [dx, dy] of this.placingBlueprintCells) {
+      const x = baseX + dx;
+      const y = baseY + dy;
+      const sx = x * zoom + offsetX;
+      const sy = y * zoom + offsetY;
+      if (zoom < 2) {
+        ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+      } else {
+        ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
+      }
+    }
+  }
+
   drawRemoteCursors(ctx, viewState = this.viewState) {
     if (!this.remoteCursors || this.remoteCursors.length === 0) return;
 
@@ -546,6 +643,8 @@ export class Renderer {
     this.drawResourceHeatmap(this.ctx);
     this.drawHoverCell(this.ctx);
     this.drawPlacingPattern(this.ctx);
+    this.drawPlacingBlueprint(this.ctx);
+    this.drawBlueprintSelection(this.ctx);
     this.drawRemoteCursors(this.ctx);
     this.drawMusicScanColumn(this.ctx);
     eventBus.emit('render:done');

@@ -23,6 +23,9 @@ import { EvolutionLabUI } from './evolution/EvolutionLabUI.js';
 import { CollaborationManager } from './collaboration/CollaborationManager.js';
 import { CollaborationUI } from './collaboration/CollaborationUI.js';
 import { MusicUI } from './music/MusicUI.js';
+import { BlueprintManager } from './blueprints/BlueprintManager.js';
+import { BlueprintPlacer } from './blueprints/BlueprintPlacer.js';
+import { BlueprintUI } from './blueprints/BlueprintUI.js';
 
 function init() {
   const cellStore = new CellStore();
@@ -42,8 +45,11 @@ function init() {
 
   const canvas = document.getElementById('grid-canvas');
 
+  const blueprintManager = new BlueprintManager();
+  const blueprintPlacer = new BlueprintPlacer(blueprintManager, cellStore, colonyManager);
+
   const renderer = new Renderer(canvas, cellStore, viewState, colonyManager, resourceField, terrainLayer);
-  const inputHandler = new InputHandler(canvas, viewState, cellStore, colonyManager, patternManager, historyManager, resourceField, terrainLayer);
+  const inputHandler = new InputHandler(canvas, viewState, cellStore, colonyManager, patternManager, historyManager, resourceField, terrainLayer, blueprintManager, blueprintPlacer);
   const uiManager = new UIManager(colonyManager, engine, patternManager, cellStore, viewState, historyManager, resourceField, patternLibrary, terrainLayer);
   uiManager.setRenderer(renderer);
   inputHandler.setTerrainLayer(terrainLayer);
@@ -58,6 +64,8 @@ function init() {
 
   const musicUI = new MusicUI(cellStore, viewState, colonyManager, renderer);
   renderer.setMusicScheduler(musicUI.musicScheduler);
+
+  const blueprintUI = new BlueprintUI(blueprintManager, blueprintPlacer, 'blueprints-container', colonyManager, cellStore, viewState);
 
   const collabManager = new CollaborationManager(
     cellStore, colonyManager, engine, patternManager,
@@ -90,7 +98,10 @@ function init() {
     analyzerUI,
     arenaUI,
     evolutionLabUI,
-    musicUI
+    musicUI,
+    blueprintManager,
+    blueprintPlacer,
+    blueprintUI
   };
 
   setTimeout(() => {

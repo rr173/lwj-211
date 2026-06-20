@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>细胞自动机沙盒模拟器</title>
-  <script type="module" crossorigin src="/assets/index-CnemYZSw.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-lde40NGJ.css">
+  <script type="module" crossorigin src="/assets/index-Xgw9Lu-a.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-bKfVuadL.css">
 </head>
 <body>
   <div id="app">
@@ -174,6 +174,26 @@
         </div>
         <button id="reset-btn">重置</button>
       </div>
+      
+      <div id="music-controls">
+        <div class="music-beat-indicator">
+          <div class="beat-grid" id="beat-grid">
+          </div>
+        </div>
+        <button id="music-play-btn" title="播放/暂停音乐">▶</button>
+        <div class="music-bpm-control">
+          <span>BPM:</span>
+          <input type="range" id="bpm-slider" min="60" max="240" value="120">
+          <span id="bpm-value">120</span>
+        </div>
+        <div class="music-volume-control">
+          <span>音量:</span>
+          <input type="range" id="volume-slider" min="0" max="100" value="70">
+          <span id="volume-value">70%</span>
+        </div>
+        <button id="mute-btn" title="静音">🔊</button>
+      </div>
+      
       <div id="timeline-container">
         <div id="timeline">
           <div id="timeline-track">
@@ -194,8 +214,10 @@
     <div id="right-panel" class="panel">
       <div class="panel-tabs">
         <button class="panel-tab active" data-tab="stats">统计面板</button>
+        <button class="panel-tab" data-tab="blueprints">📐 蓝图</button>
         <button class="panel-tab" data-tab="library">📚 图鉴</button>
         <button class="panel-tab" data-tab="analyzer">📊 分析仪</button>
+        <button class="panel-tab" data-tab="music">🎵 音乐</button>
         <button class="panel-tab" data-tab="arena">⚔️ 竞技场</button>
         <button class="panel-tab" data-tab="collab">👥 协作</button>
       </div>
@@ -243,10 +265,92 @@
         </div>
       </div>
 
+      <div class="panel-tab-content" data-tab="blueprints" id="blueprints-container">
+      </div>
+
       <div class="panel-tab-content" data-tab="library" id="library-container">
       </div>
 
       <div class="panel-tab-content" data-tab="analyzer" id="analyzer-container">
+      </div>
+      
+      <div class="panel-tab-content" data-tab="music" id="music-container">
+        <div class="panel-header">
+          <h3>🎵 细胞音乐合成器</h3>
+        </div>
+        
+        <div class="panel-section">
+          <div class="section-title">音色与包络</div>
+          
+          <div class="form-row">
+            <label>波形</label>
+            <select id="music-waveform">
+              <option value="sine">正弦波 (柔和)</option>
+              <option value="square">方波 (复古)</option>
+              <option value="sawtooth">锯齿波 (明亮)</option>
+              <option value="triangle">三角波 (温暖)</option>
+            </select>
+          </div>
+          
+          <div class="slider-row">
+            <label>Attack: <span id="attack-value">50</span>ms</label>
+            <div class="slider-control">
+              <input type="range" id="attack-slider" min="0" max="500" value="50">
+            </div>
+          </div>
+          
+          <div class="slider-row">
+            <label>Decay: <span id="decay-value">100</span>ms</label>
+            <div class="slider-control">
+              <input type="range" id="decay-slider" min="0" max="500" value="100">
+            </div>
+          </div>
+          
+          <div class="slider-row">
+            <label>Sustain: <span id="sustain-value">0.7</span></label>
+            <div class="slider-control">
+              <input type="range" id="sustain-slider" min="0" max="1" step="0.01" value="0.7">
+            </div>
+          </div>
+          
+          <div class="slider-row">
+            <label>Release: <span id="release-value">300</span>ms</label>
+            <div class="slider-control">
+              <input type="range" id="release-slider" min="0" max="1000" value="300">
+            </div>
+          </div>
+        </div>
+        
+        <div class="panel-section">
+          <div class="section-title">群落音色</div>
+          <div id="colony-music-list"></div>
+        </div>
+        
+        <div class="panel-section">
+          <div class="section-title">当前播放音符</div>
+          <div id="current-notes-list" class="current-notes">
+            <div class="empty-hint">无</div>
+          </div>
+        </div>
+        
+        <div class="panel-section">
+          <div class="section-title">钢琴卷帘预览</div>
+          <canvas id="piano-roll-canvas" width="280" height="120"></canvas>
+        </div>
+        
+        <div class="panel-section">
+          <div class="section-title">录制导出</div>
+          <button id="record-btn" class="primary-btn">
+            <span class="record-icon">⏺</span>
+            <span class="record-text">开始录制</span>
+          </button>
+          <div id="record-status" class="hint" style="margin-top:8px;">
+            点击开始录制，录制完成后可下载 WAV 文件
+          </div>
+          <div id="download-section" style="display:none; margin-top:8px;">
+            <a id="wav-download-link" class="small-btn" download="cellular-music.wav" style="display:inline-block; text-decoration:none; padding:6px 12px;">下载 WAV</a>
+          </div>
+        </div>
       </div>
       
       <div class="panel-tab-content" data-tab="arena" id="arena-container">
