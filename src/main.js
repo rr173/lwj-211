@@ -26,6 +26,7 @@ import { MusicUI } from './music/MusicUI.js';
 import { BlueprintManager } from './blueprints/BlueprintManager.js';
 import { BlueprintPlacer } from './blueprints/BlueprintPlacer.js';
 import { BlueprintUI } from './blueprints/BlueprintUI.js';
+import { ChallengeUI } from './challenge/ChallengeUI.js';
 
 function init() {
   const cellStore = new CellStore();
@@ -74,6 +75,8 @@ function init() {
   const collabUI = new CollaborationUI('collab-container', collabManager);
   collabManager.connect();
 
+  const challengeUI = new ChallengeUI('challenge-container');
+
   window.__app = {
     cellStore,
     colonyManager,
@@ -101,7 +104,8 @@ function init() {
     musicUI,
     blueprintManager,
     blueprintPlacer,
-    blueprintUI
+    blueprintUI,
+    challengeUI
   };
 
   setTimeout(() => {
