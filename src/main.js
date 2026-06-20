@@ -59,8 +59,8 @@ function init() {
     cellStore, colonyManager, engine, patternManager,
     historyManager, resourceField, terrainLayer
   );
-  collabManager.connect();
   const collabUI = new CollaborationUI('collab-container', collabManager);
+  collabManager.connect();
 
   window.__app = {
     cellStore,

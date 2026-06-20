@@ -27,6 +27,9 @@ export class CollaborationUI {
     this._buildHTML();
     this._bindEvents();
     this._bindEventBus();
+    if (this.collabManager && this.collabManager.connected) {
+      this.connected = true;
+    }
     this._updateConnectionStatus();
   }
 
