@@ -18,6 +18,8 @@ import { GeneLab } from './genetics/GeneLab.js';
 import { GeneLabUI } from './genetics/GeneLabUI.js';
 import { Arena } from './arena/Arena.js';
 import { ArenaUI } from './arena/ArenaUI.js';
+import { EvolutionLab } from './evolution/EvolutionLab.js';
+import { EvolutionLabUI } from './evolution/EvolutionLabUI.js';
 
 function init() {
   const cellStore = new CellStore();
@@ -47,6 +49,9 @@ function init() {
   const patternLibraryUI = new PatternLibraryUI(patternLibrary, patternManager, 'library-container');
   const analyzerUI = new AnalyzerUI(colonyManager, geneLab, 'analyzer-container');
   const arenaUI = new ArenaUI(arena, geneLab, 'arena-container');
+  
+  const evolutionLab = new EvolutionLab(patternLibrary);
+  const evolutionLabUI = new EvolutionLabUI(evolutionLab, 'evolution-container', colonyManager, geneLab, arena);
 
   window.__app = {
     cellStore,
@@ -64,10 +69,12 @@ function init() {
     uiManager,
     geneLab,
     arena,
+    evolutionLab,
     geneLabUI,
     patternLibraryUI,
     analyzerUI,
-    arenaUI
+    arenaUI,
+    evolutionLabUI
   };
 
   setTimeout(() => {
