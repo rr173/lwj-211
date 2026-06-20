@@ -159,6 +159,9 @@ export class InputHandler {
       this.drawMode = null;
       eventBus.emit('state:updated');
       eventBus.emit('terrain:changed');
+      if (window.__app?.collabManager) {
+        window.__app.collabManager.flushBatchImmediate();
+      }
     }
   }
 
@@ -169,6 +172,9 @@ export class InputHandler {
       this.drawMode = null;
       eventBus.emit('state:updated');
       eventBus.emit('terrain:changed');
+      if (window.__app?.collabManager) {
+        window.__app.collabManager.flushBatchImmediate();
+      }
     }
   }
 
@@ -188,10 +194,19 @@ export class InputHandler {
 
     this._triggerForkIfNeeded();
 
+    const gx = Math.floor(x);
+    const gy = Math.floor(y);
+
     if (this.drawMode === 'draw') {
-      this.cellStore.set(x, y, colony.id);
+      this.cellStore.set(gx, gy, colony.id);
+      if (window.__app?.collabManager) {
+        window.__app.collabManager.recordCellOperation('set', gx, gy, colony.id);
+      }
     } else if (this.drawMode === 'erase') {
-      this.cellStore.delete(x, y);
+      this.cellStore.delete(gx, gy);
+      if (window.__app?.collabManager) {
+        window.__app.collabManager.recordCellOperation('delete', gx, gy);
+      }
     }
     eventBus.emit('state:updated');
   }

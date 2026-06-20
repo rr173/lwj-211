@@ -129,11 +129,19 @@ export class UIManager {
       });
     }
 
-    document.getElementById('step-btn').addEventListener('click', () => this.engine.step());
+    document.getElementById('step-btn').addEventListener('click', () => {
+      this.engine.step();
+      if (window.__app?.collabManager) {
+        window.__app.collabManager.recordEvolutionStep();
+      }
+    });
     document.getElementById('toggle-run-btn').addEventListener('click', () => this.engine.toggleRunning());
     document.getElementById('reset-btn').addEventListener('click', () => {
       if (confirm('确定要清空所有细胞吗？')) {
         this.engine.reset();
+        if (window.__app?.collabManager) {
+          window.__app.collabManager.recordEvolutionReset();
+        }
       }
     });
 
@@ -166,6 +174,9 @@ export class UIManager {
         e.preventDefault();
         if (this.historyManager && this.historyManager.compareMode) return;
         this.engine.step();
+        if (window.__app?.collabManager) {
+          window.__app.collabManager.recordEvolutionStep();
+        }
       } else if (e.code === 'Enter') {
         e.preventDefault();
         if (this.historyManager && this.historyManager.compareMode) return;

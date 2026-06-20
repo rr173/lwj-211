@@ -15,6 +15,8 @@ export class Renderer {
     this.placingCells = null;
     this.hoverCell = null;
 
+    this.remoteCursors = [];
+
     this.compareMode = false;
     this.canvasB = null;
     this.ctxB = null;
@@ -24,6 +26,14 @@ export class Renderer {
 
     this.setupCanvas();
     this.bindEvents();
+    this._bindCollabEvents();
+  }
+
+  _bindCollabEvents() {
+    eventBus.on('collab:cursorsUpdated', (cursors) => {
+      this.remoteCursors = cursors || [];
+      this.render();
+    });
   }
 
   setupCanvas() {
@@ -271,6 +281,65 @@ export class Renderer {
     }
   }
 
+  drawRemoteCursors(ctx, viewState = this.viewState) {
+    if (!this.remoteCursors || this.remoteCursors.length === 0) return;
+
+    const zoom = viewState.zoom;
+    const offsetX = viewState.offsetX;
+    const offsetY = viewState.offsetY;
+    const cursorSize = Math.max(8, zoom * 0.8);
+
+    for (const cursor of this.remoteCursors) {
+      const { x, y, color, peerId } = cursor;
+      if (x === null || x === undefined) continue;
+
+      const sx = x * zoom + offsetX + zoom / 2;
+      const sy = y * zoom + offsetY + zoom / 2;
+      const label = (peerId || '').slice(0, 4);
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.8;
+
+      ctx.beginPath();
+      ctx.moveTo(sx - cursorSize, sy);
+      ctx.lineTo(sx - 3, sy);
+      ctx.moveTo(sx + 3, sy);
+      ctx.lineTo(sx + cursorSize, sy);
+      ctx.moveTo(sx, sy - cursorSize);
+      ctx.lineTo(sx, sy - 3);
+      ctx.moveTo(sx, sy + 3);
+      ctx.lineTo(sx, sy + cursorSize);
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = 0.9;
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      const labelX = sx + 5;
+      const labelY = sy - 5;
+      const labelPad = 2;
+      const labelWidth = ctx.measureText(label).width + labelPad * 2;
+      const labelHeight = 12;
+
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.2;
+      ctx.fillRect(labelX - labelPad, labelY - labelHeight, labelWidth, labelHeight);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = color;
+      ctx.fillText(label, labelX, labelY);
+
+      ctx.restore();
+    }
+  }
+
   drawTerrain(ctx, customTerrain = null, viewState = this.viewState) {
     const terrain = customTerrain || this.terrainLayer;
     if (!terrain) return;
@@ -417,6 +486,7 @@ export class Renderer {
     this.drawResourceHeatmap(this.ctx);
     this.drawHoverCell(this.ctx);
     this.drawPlacingPattern(this.ctx);
+    this.drawRemoteCursors(this.ctx);
     eventBus.emit('render:done');
   }
 }

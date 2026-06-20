@@ -184,6 +184,10 @@ export class PatternManager {
     this.placementFlipped = false;
     eventBus.emit('state:updated');
     eventBus.emit('pattern:placed');
+
+    if (window.__app?.collabManager) {
+      window.__app.collabManager.recordPatternPlaced(cells, startX, startY, colony.id);
+    }
   }
 
   cancelPlacement() {
@@ -202,6 +206,10 @@ export class PatternManager {
       this.cellStore.set(startX + dx, startY + dy, colony.id);
     }
     eventBus.emit('state:updated');
+
+    if (window.__app?.collabManager) {
+      window.__app.collabManager.recordPatternPlaced(cells, startX, startY, colony.id);
+    }
   }
 
   isPlacing() {

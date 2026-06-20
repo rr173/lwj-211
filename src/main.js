@@ -20,6 +20,8 @@ import { Arena } from './arena/Arena.js';
 import { ArenaUI } from './arena/ArenaUI.js';
 import { EvolutionLab } from './evolution/EvolutionLab.js';
 import { EvolutionLabUI } from './evolution/EvolutionLabUI.js';
+import { CollaborationManager } from './collaboration/CollaborationManager.js';
+import { CollaborationUI } from './collaboration/CollaborationUI.js';
 
 function init() {
   const cellStore = new CellStore();
@@ -53,6 +55,13 @@ function init() {
   const evolutionLab = new EvolutionLab(patternLibrary);
   const evolutionLabUI = new EvolutionLabUI(evolutionLab, 'evolution-container', colonyManager, geneLab, arena);
 
+  const collabManager = new CollaborationManager(
+    cellStore, colonyManager, engine, patternManager,
+    historyManager, resourceField, terrainLayer
+  );
+  collabManager.connect();
+  const collabUI = new CollaborationUI('collab-container', collabManager);
+
   window.__app = {
     cellStore,
     colonyManager,
@@ -70,6 +79,8 @@ function init() {
     geneLab,
     arena,
     evolutionLab,
+    collabManager,
+    collabUI,
     geneLabUI,
     patternLibraryUI,
     analyzerUI,
