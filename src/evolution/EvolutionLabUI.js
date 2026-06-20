@@ -344,8 +344,6 @@ export class EvolutionLabUI {
     this.els.playPreviewBtn.addEventListener('click', () => this.playPreview());
     this.els.pausePreviewBtn.addEventListener('click', () => this.pausePreview());
 
-    eventBus.on('evolution:generationComplete', (stats) => this.onGenerationComplete(stats));
-    eventBus.on('evolution:evaluationProgress', (data) => this.onEvaluationProgress(data));
     eventBus.on('evolution:complete', (result) => this.onEvolutionComplete(result));
     eventBus.on('evolution:error', (error) => this.onEvolutionError(error));
     eventBus.on('evolution:earlyTermination', (info) => {

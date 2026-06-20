@@ -371,12 +371,6 @@ export class EvolutionLab {
           if (onEvaluationProgress) {
             onEvaluationProgress(this.generation, evaluated, total, current);
           }
-          eventBus.emit('evolution:evaluationProgress', {
-            generation: this.generation,
-            evaluated,
-            total,
-            current
-          });
         });
 
         if (this.shouldStop) break;
@@ -386,7 +380,6 @@ export class EvolutionLab {
         if (onGenerationComplete) {
           onGenerationComplete(stats);
         }
-        eventBus.emit('evolution:generationComplete', stats);
 
         if (this.checkEarlyTermination()) {
           eventBus.emit('evolution:earlyTermination', {
@@ -398,6 +391,8 @@ export class EvolutionLab {
 
         if (this.generation < this.params.maxGenerations - 1) {
           this.createNextGeneration();
+        } else {
+          break;
         }
       }
     } catch (e) {
