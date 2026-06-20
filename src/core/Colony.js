@@ -3,6 +3,8 @@ import { eventBus } from './EventBus.js';
 
 let colonyIdCounter = 0;
 
+const DEFAULT_WAVEFORMS = ['sine', 'square', 'triangle', 'sawtooth'];
+
 export class Colony {
   constructor(rule) {
     this.id = 'colony_' + (++colonyIdCounter) + '_' + Math.random().toString(36).substr(2, 5);
@@ -13,6 +15,13 @@ export class Colony {
     this.growthRateHistory = [];
     this.mutationHistory = [];
     this.lastMutationCheck = 0;
+
+    const index = colonyIdCounter - 1;
+    this.musicConfig = {
+      waveform: DEFAULT_WAVEFORMS[index % DEFAULT_WAVEFORMS.length],
+      octaveOffset: 0,
+      enabled: true
+    };
   }
 
   get name() {
@@ -96,6 +105,21 @@ export class Colony {
     return null;
   }
 
+  setMusicWaveform(waveform) {
+    this.musicConfig.waveform = waveform;
+    eventBus.emit('colony:musicConfigChanged', this);
+  }
+
+  setMusicOctaveOffset(offset) {
+    this.musicConfig.octaveOffset = Math.max(-2, Math.min(2, offset));
+    eventBus.emit('colony:musicConfigChanged', this);
+  }
+
+  setMusicEnabled(enabled) {
+    this.musicConfig.enabled = enabled;
+    eventBus.emit('colony:musicConfigChanged', this);
+  }
+
   toJSON() {
     return {
       id: this.id,
@@ -105,7 +129,8 @@ export class Colony {
       currentCount: this.currentCount,
       growthRateHistory: [...this.growthRateHistory],
       mutationHistory: [...this.mutationHistory],
-      lastMutationCheck: this.lastMutationCheck
+      lastMutationCheck: this.lastMutationCheck,
+      musicConfig: { ...this.musicConfig }
     };
   }
 
@@ -118,6 +143,9 @@ export class Colony {
     colony.growthRateHistory = data.growthRateHistory || [];
     colony.mutationHistory = data.mutationHistory || [];
     colony.lastMutationCheck = data.lastMutationCheck || 0;
+    if (data.musicConfig) {
+      colony.musicConfig = { ...data.musicConfig };
+    }
     const match = data.id.match(/colony_(\d+)_/);
     if (match) {
       colonyIdCounter = Math.max(colonyIdCounter, parseInt(match[1], 10));

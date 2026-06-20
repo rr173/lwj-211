@@ -2968,5 +2968,270 @@ textarea:focus {
   50% { opacity: 0.6; }
 }
 
+#music-controls {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 120px;
+  background: rgba(22, 33, 62, 0.92);
+  border-radius: 8px;
+  padding: 10px 16px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  backdrop-filter: blur(8px);
+  z-index: 5;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.music-beat-indicator {
+  display: flex;
+  align-items: center;
+}
+
+.beat-grid {
+  display: flex;
+  gap: 3px;
+}
+
+.beat-cell {
+  width: 8px;
+  height: 20px;
+  background: #0a0a14;
+  border-radius: 2px;
+  transition: all 0.1s;
+}
+
+.beat-cell.active {
+  background: #e94560;
+  box-shadow: 0 0 6px rgba(233, 69, 96, 0.6);
+}
+
+.beat-cell.accent {
+  background: #0f3460;
+}
+
+.beat-cell.accent.active {
+  background: #e94560;
+}
+
+#music-play-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  background: #e94560;
+}
+
+#music-play-btn:hover {
+  background: #c73651;
+}
+
+#music-play-btn.playing {
+  background: #4caf50;
+}
+
+#music-play-btn.playing:hover {
+  background: #45a049;
+}
+
+.music-bpm-control,
+.music-volume-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #bbb;
+}
+
+.music-bpm-control input[type="range"],
+.music-volume-control input[type="range"] {
+  width: 80px;
+  cursor: pointer;
+}
+
+#bpm-value,
+#volume-value {
+  min-width: 40px;
+  font-family: 'SF Mono', Monaco, monospace;
+  color: #e0e0e0;
+  font-size: 11px;
+}
+
+#mute-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+#mute-btn.muted {
+  background: #666;
+}
+
+.colony-music-item {
+  padding: 10px;
+  background: #1a1a2e;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  border-left: 3px solid #4fc3f7;
+}
+
+.colony-music-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.colony-music-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.colony-music-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.colony-music-controls {
+  display: flex;
+  gap: 6px;
+  flex-direction: column;
+}
+
+.colony-music-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.colony-music-row label {
+  width: 50px;
+  font-size: 10px;
+  color: #888;
+  flex-shrink: 0;
+}
+
+.colony-music-row select,
+.colony-music-row input[type="range"] {
+  flex: 1;
+  padding: 4px 6px;
+  background: #0f3460;
+  border: 1px solid #0f3460;
+  border-radius: 3px;
+  color: #e0e0e0;
+  font-size: 11px;
+}
+
+.octave-value {
+  min-width: 30px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 10px;
+  color: #4fc3f7;
+  text-align: center;
+}
+
+.current-notes {
+  min-height: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  background: #0a0a14;
+  border-radius: 4px;
+}
+
+.note-badge {
+  padding: 4px 8px;
+  background: #0f3460;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'SF Mono', Monaco, monospace;
+  color: #4fc3f7;
+  animation: notePulse 0.3s ease-out;
+}
+
+@keyframes notePulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+#piano-roll-canvas {
+  width: 100%;
+  background: #0a0a14;
+  border-radius: 4px;
+  border: 1px solid #0f3460;
+}
+
+#record-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.record-icon {
+  font-size: 12px;
+}
+
+.record-btn.recording .record-icon {
+  animation: recordBlink 0.5s ease-in-out infinite alternate;
+  color: #f44336;
+}
+
+@keyframes recordBlink {
+  from { opacity: 1; }
+  to { opacity: 0.4; }
+}
+
+#record-status {
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+#download-section {
+  text-align: center;
+}
+
+#wav-download-link {
+  background: #4caf50;
+  color: white;
+}
+
+#wav-download-link:hover {
+  background: #45a049;
+}
+
+@media (max-width: 1024px) {
+  #music-controls {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .music-bpm-control input[type="range"],
+  .music-volume-control input[type="range"] {
+    width: 60px;
+  }
+}
+
 
 

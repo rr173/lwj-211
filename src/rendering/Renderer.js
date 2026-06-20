@@ -14,6 +14,7 @@ export class Renderer {
     this.placingPattern = null;
     this.placingCells = null;
     this.hoverCell = null;
+    this.musicScheduler = null;
 
     this.remoteCursors = [];
 
@@ -27,6 +28,7 @@ export class Renderer {
     this.setupCanvas();
     this.bindEvents();
     this._bindCollabEvents();
+    this._startAnimationLoop();
   }
 
   _bindCollabEvents() {
@@ -34,6 +36,20 @@ export class Renderer {
       this.remoteCursors = cursors || [];
       this.render();
     });
+  }
+
+  setMusicScheduler(scheduler) {
+    this.musicScheduler = scheduler;
+  }
+
+  _startAnimationLoop() {
+    const animate = () => {
+      if (this.musicScheduler && this.musicScheduler.isPlaying) {
+        this.render();
+      }
+      requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
   }
 
   setupCanvas() {
@@ -223,13 +239,57 @@ export class Renderer {
       for (const cell of colonyCells) {
         const sx = cell.x * zoom + offsetX;
         const sy = cell.y * zoom + offsetY;
+        let cellSize = zoom;
+        let cellOffset = 0;
+
+        if (this.musicScheduler && this.musicScheduler.isPlaying) {
+          const pulseScale = this.musicScheduler.getPulseScale(cell.x, cell.y, colonyId);
+          if (pulseScale > 1) {
+            const sizeDiff = zoom * (pulseScale - 1);
+            cellSize = zoom + sizeDiff;
+            cellOffset = -sizeDiff / 2;
+          }
+        }
+
         if (zoom < 2) {
-          ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+          ctx.fillRect(sx, sy, Math.max(1, cellSize), Math.max(1, cellSize));
         } else {
-          ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
+          ctx.fillRect(sx + 0.5 + cellOffset, sy + 0.5 + cellOffset, cellSize - 1, cellSize - 1);
         }
       }
     }
+  }
+
+  drawMusicScanColumn(ctx, viewState = this.viewState) {
+    if (!this.musicScheduler || !this.musicScheduler.isPlaying) return;
+
+    const stepInfo = this.musicScheduler.getCurrentStep();
+    const step = typeof stepInfo === 'object' ? stepInfo.step : stepInfo;
+    const { minX, minY, maxX, maxY } = viewState.getVisibleRect();
+    const visibleWidth = maxX - minX;
+    const colWidth = visibleWidth / 16;
+    const zoom = viewState.zoom;
+    const offsetX = viewState.offsetX;
+    const offsetY = viewState.offsetY;
+
+    const colWorldX = minX + step * colWidth;
+    const colScreenX = colWorldX * zoom + offsetX;
+    const colScreenWidth = colWidth * zoom;
+
+    ctx.fillStyle = 'rgba(233, 69, 96, 0.15)';
+    ctx.fillRect(colScreenX, 0, colScreenWidth, viewState.canvasHeight);
+
+    ctx.strokeStyle = 'rgba(233, 69, 96, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(colScreenX, 0);
+    ctx.lineTo(colScreenX, viewState.canvasHeight);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(colScreenX + colScreenWidth, 0);
+    ctx.lineTo(colScreenX + colScreenWidth, viewState.canvasHeight);
+    ctx.stroke();
   }
 
   drawHoverCell(ctx, viewState = this.viewState) {
@@ -487,6 +547,7 @@ export class Renderer {
     this.drawHoverCell(this.ctx);
     this.drawPlacingPattern(this.ctx);
     this.drawRemoteCursors(this.ctx);
+    this.drawMusicScanColumn(this.ctx);
     eventBus.emit('render:done');
   }
 }

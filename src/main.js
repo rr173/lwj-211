@@ -22,6 +22,7 @@ import { EvolutionLab } from './evolution/EvolutionLab.js';
 import { EvolutionLabUI } from './evolution/EvolutionLabUI.js';
 import { CollaborationManager } from './collaboration/CollaborationManager.js';
 import { CollaborationUI } from './collaboration/CollaborationUI.js';
+import { MusicUI } from './music/MusicUI.js';
 
 function init() {
   const cellStore = new CellStore();
@@ -55,6 +56,9 @@ function init() {
   const evolutionLab = new EvolutionLab(patternLibrary);
   const evolutionLabUI = new EvolutionLabUI(evolutionLab, 'evolution-container', colonyManager, geneLab, arena);
 
+  const musicUI = new MusicUI(cellStore, viewState, colonyManager, renderer);
+  renderer.setMusicScheduler(musicUI.musicScheduler);
+
   const collabManager = new CollaborationManager(
     cellStore, colonyManager, engine, patternManager,
     historyManager, resourceField, terrainLayer
@@ -85,7 +89,8 @@ function init() {
     patternLibraryUI,
     analyzerUI,
     arenaUI,
-    evolutionLabUI
+    evolutionLabUI,
+    musicUI
   };
 
   setTimeout(() => {
