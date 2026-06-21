@@ -7,7 +7,7 @@ export class Rule {
     this.survival = options.survival || new Set([2, 3]);
     this.neighborhood = options.neighborhood || 'moore';
     this.priority = options.priority || 0;
-    this.consumptionRate = options.consumptionRate !== undefined ? Math.max(0, options.consumptionRate) : 1;
+    this.consumptionRate = options.consumptionRate !== undefined ? Math.max(0, options.consumptionRate) : 0;
     this.productionRate = options.productionRate !== undefined ? Math.max(0, options.productionRate) : 0;
     this.predationPower = options.predationPower !== undefined ? Math.max(0, Math.min(10, options.predationPower)) : 0;
   }
@@ -104,7 +104,7 @@ export class Rule {
       survival: new Set(data.survival || [2, 3]),
       neighborhood: data.neighborhood || 'moore',
       priority: data.priority || 0,
-      consumptionRate: data.consumptionRate !== undefined ? data.consumptionRate : 1,
+      consumptionRate: data.consumptionRate !== undefined ? data.consumptionRate : 0,
       productionRate: data.productionRate !== undefined ? data.productionRate : 0,
       predationPower: data.predationPower !== undefined ? data.predationPower : 0
     });
@@ -119,8 +119,8 @@ export const PRESET_RULES = [
     survival: new Set([2, 3]),
     neighborhood: 'moore',
     priority: 0,
-    consumptionRate: 1,
-    productionRate: 2,
+    consumptionRate: 0,
+    productionRate: 0,
     predationPower: 0
   }),
   () => new Rule({
@@ -130,9 +130,9 @@ export const PRESET_RULES = [
     survival: new Set([2, 3]),
     neighborhood: 'moore',
     priority: 1,
-    consumptionRate: 2,
+    consumptionRate: 0,
     productionRate: 0,
-    predationPower: 5
+    predationPower: 0
   }),
   () => new Rule({
     name: 'VN邻域规则',
@@ -141,7 +141,7 @@ export const PRESET_RULES = [
     survival: new Set([0, 1, 3]),
     neighborhood: 'vonneumann',
     priority: 2,
-    consumptionRate: 1,
+    consumptionRate: 0,
     productionRate: 0,
     predationPower: 0
   })
