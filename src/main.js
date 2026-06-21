@@ -27,6 +27,7 @@ import { BlueprintManager } from './blueprints/BlueprintManager.js';
 import { BlueprintPlacer } from './blueprints/BlueprintPlacer.js';
 import { BlueprintUI } from './blueprints/BlueprintUI.js';
 import { ChallengeUI } from './challenge/ChallengeUI.js';
+import { ScriptUI } from './scripting/ScriptUI.js';
 
 function init() {
   const cellStore = new CellStore();
@@ -77,7 +78,7 @@ function init() {
 
   const challengeUI = new ChallengeUI('challenge-container');
 
-  window.__app = {
+  const app = {
     cellStore,
     colonyManager,
     viewState,
@@ -107,6 +108,11 @@ function init() {
     blueprintUI,
     challengeUI
   };
+
+  const scriptUI = new ScriptUI(app, 'script-container');
+  app.scriptUI = scriptUI;
+
+  window.__app = app;
 
   setTimeout(() => {
     resourceField.initialize(viewState, 0.3);

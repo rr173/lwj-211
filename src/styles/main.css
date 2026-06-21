@@ -4268,4 +4268,229 @@ textarea:focus {
   background: #e94560;
 }
 
+.script-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.script-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.example-select {
+  background: #16213e;
+  color: #e0e0e0;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.example-select:hover {
+  border-color: #e94560;
+}
+
+.script-editor-wrapper {
+  display: flex;
+  background: #0a0a14;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.script-line-numbers {
+  background: #0f0f1f;
+  padding: 8px 6px;
+  text-align: right;
+  color: #444;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  user-select: none;
+  min-width: 36px;
+  overflow-y: hidden;
+  border-right: 1px solid #1a1a2e;
+}
+
+.script-line-num {
+  height: 19.2px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+
+.script-line-num.error-line {
+  background: rgba(233, 69, 96, 0.3);
+  color: #e94560;
+  font-weight: bold;
+}
+
+.script-line-num.highlight-line {
+  background: rgba(79, 195, 247, 0.2);
+  color: #4fc3f7;
+}
+
+.script-editor {
+  flex: 1;
+  background: #0a0a14;
+  color: #e0e0e0;
+  border: none;
+  padding: 8px 10px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+  min-height: 384px;
+  tab-size: 2;
+}
+
+.script-editor::placeholder {
+  color: #555;
+}
+
+.script-editor:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.script-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(233, 69, 96, 0.15);
+  border: 1px solid #e94560;
+  border-radius: 4px;
+  color: #e94560;
+  font-size: 12px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+}
+
+.script-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.script-toolbar button {
+  padding: 6px 12px;
+  background: #2a2a4a;
+  color: #e0e0e0;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.script-toolbar button:hover:not(:disabled) {
+  background: #3a3a5a;
+  border-color: #e94560;
+}
+
+.script-toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.script-toolbar .primary-btn {
+  background: #e94560;
+  color: #fff;
+  border: none;
+}
+
+.script-toolbar .primary-btn:hover:not(:disabled) {
+  background: #c73651;
+}
+
+.script-log {
+  max-height: 200px;
+  overflow-y: auto;
+  background: #0a0a14;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.script-log-entry {
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(15, 52, 96, 0.5);
+  word-break: break-all;
+}
+
+.script-log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-time {
+  color: #666;
+  margin-right: 6px;
+}
+
+.log-line {
+  color: #888;
+  margin-right: 6px;
+}
+
+.log-result {
+  color: #e0e0e0;
+}
+
+.script-log code {
+  color: #4fc3f7;
+  background: rgba(79, 195, 247, 0.1);
+  padding: 0 3px;
+  border-radius: 2px;
+}
+
+.script-cheatsheet {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3px;
+  font-size: 11px;
+}
+
+.cheatsheet-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  background: rgba(15, 52, 96, 0.3);
+  border-radius: 3px;
+}
+
+.cheatsheet-row code {
+  color: #4fc3f7;
+  background: rgba(79, 195, 247, 0.1);
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  min-width: 150px;
+}
+
+.cheatsheet-row span {
+  color: #999;
+  font-size: 10px;
+}
+
+#script-container .panel-section {
+  padding: 10px 12px;
+}
+
+#script-container .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 
