@@ -13,6 +13,7 @@ export class ScriptEngine {
     this.currentLine = -1;
     this.nestDepth = 0;
     this.maxNestDepth = 3;
+    this.loopStack = [];
     this.onLog = null;
     this.onError = null;
     this.onLineComplete = null;
@@ -25,10 +26,11 @@ export class ScriptEngine {
     this.shouldStop = false;
     this.variables = new Map();
     this.nestDepth = 0;
+    this.loopStack = [];
 
     try {
       const instructions = this.parser.parse(scriptText);
-      await this._executeInstructions(instructions, lineByLine);
+      await this._executeBlock(instructions, lineByLine);
       this.onComplete?.();
     } catch (e) {
       if (e instanceof ScriptError) {
@@ -54,7 +56,24 @@ export class ScriptEngine {
     this.isPaused = false;
   }
 
-  async _executeInstructions(instructions, lineByLine) {
+  _getCurrentLoopVar() {
+    if (this.loopStack.length > 0) {
+      return { current: this.loopStack[this.loopStack.length - 1] };
+    }
+    return null;
+  }
+
+  _resolveArgs(args) {
+    const loopVars = this._getCurrentLoopVar();
+    return this.parser.resolveArgs(args, this.variables, loopVars);
+  }
+
+  _evalExpr(expr) {
+    const loopVars = this._getCurrentLoopVar();
+    return this.parser.evalExpression(String(expr), this.variables, loopVars);
+  }
+
+  async _executeBlock(instructions, lineByLine) {
     for (const instr of instructions) {
       if (this.shouldStop) return;
       while (this.isPaused && !this.shouldStop) {
@@ -66,7 +85,7 @@ export class ScriptEngine {
       await this._executeSingle(instr, lineByLine);
       this.onLineComplete?.(instr.lineNumber);
 
-      if (lineByLine) {
+      if (lineByLine && instr.command !== 'END') {
         this.isPaused = true;
         while (this.isPaused && !this.shouldStop) {
           await this._sleep(50);
@@ -76,8 +95,14 @@ export class ScriptEngine {
   }
 
   async _executeSingle(instr, lineByLine) {
-    const loopVars = { current: 0 };
-    const resolvedArgs = this.parser.resolveArgs(instr.args, this.variables, loopVars);
+    let resolvedArgs;
+    if (instr.command === 'SET') {
+      resolvedArgs = [instr.args[0], this._evalExpr(instr.args[1])];
+    } else if (instr.command === 'RULE') {
+      resolvedArgs = instr.args;
+    } else {
+      resolvedArgs = this._resolveArgs(instr.args);
+    }
 
     switch (instr.command) {
       case 'PLACE': {
@@ -221,6 +246,7 @@ export class ScriptEngine {
         const after = this.app.cellStore.size();
         const diff = after - before;
         const diffStr = diff >= 0 ? `+${diff}` : `${diff}`;
+        this._refresh();
         this._log(instr.lineNumber, `STEP ${n}`, `推进${n}代，细胞数 ${before} → ${after} (${diffStr})`);
         break;
       }
@@ -248,15 +274,14 @@ export class ScriptEngine {
         break;
       }
       case 'SET': {
-        const [name, value] = instr.args;
+        const [name, valueExpr] = instr.args;
         const varName = String(name).replace(/^\$/, '');
-        const loopVars = { current: 0 };
-        const resolvedValue = this.parser._evalParam(value, this.variables, loopVars);
-        if (typeof resolvedValue === 'number') {
+        const resolvedValue = this._evalExpr(valueExpr);
+        if (typeof resolvedValue === 'number' && !isNaN(resolvedValue)) {
           this.variables.set(varName, resolvedValue);
-          this._log(instr.lineNumber, `SET ${varName} ${value}`, `设置变量 $${varName} = ${resolvedValue}`);
+          this._log(instr.lineNumber, `SET ${varName} ${valueExpr}`, `设置变量 $${varName} = ${resolvedValue}`);
         } else {
-          throw new ScriptError(`变量值必须是数字: ${value}`, instr.lineNumber);
+          throw new ScriptError(`变量值必须是数字: ${valueExpr}`, instr.lineNumber);
         }
         break;
       }
@@ -287,37 +312,23 @@ export class ScriptEngine {
         if (this.nestDepth >= this.maxNestDepth) {
           throw new ScriptError(`REPEAT嵌套超过最大层数(${this.maxNestDepth})`, instr.lineNumber);
         }
-        const [count] = resolvedArgs.map(v => Math.max(0, Math.round(v)));
+        const count = Math.max(0, Math.round(resolvedArgs[0]));
         this.nestDepth++;
+
         for (let i = 0; i < count && !this.shouldStop; i++) {
           while (this.isPaused && !this.shouldStop) await this._sleep(50);
           if (this.shouldStop) break;
 
-          this.variables.set('i', i);
-          const innerLoopVars = { current: i };
-          const resolvedInstructions = this._resolveBlockVars(instr.block, innerLoopVars);
-          await this._executeInstructions(resolvedInstructions, lineByLine);
+          this.loopStack.push(i);
+          await this._executeBlock(instr.block, lineByLine);
+          this.loopStack.pop();
         }
-        this.variables.delete('i');
+
         this.nestDepth--;
         this._log(instr.lineNumber, `REPEAT ${count} ... END`, `循环执行 ${count} 次`);
         break;
       }
     }
-  }
-
-  _resolveBlockVars(instructions, loopVars) {
-    return instructions.map(instr => {
-      if (instr.command === 'REPEAT') {
-        return {
-          ...instr,
-          args: [this.parser.resolveArgs([instr.args[0]], this.variables, loopVars)[0]],
-          block: this._resolveBlockVars(instr.block, loopVars)
-        };
-      }
-      const resolvedArgs = this.parser.resolveArgs(instr.args, this.variables, loopVars);
-      return { ...instr, args: resolvedArgs };
-    });
   }
 
   _getActiveColony() {
