@@ -299,9 +299,15 @@ export class ChallengeUI {
     if (mode === 'paint') {
       const currentCount = this.engine.countCells();
       if (currentCount >= this.currentLevel.maxCells) {
-        if (!this.engine.getCell(x, y)) return;
+        if (!this.engine.getCell(x, y)) {
+          this._showLimitHint();
+          return;
+        }
       }
-      this.engine.setCell(x, y, true);
+      const placed = this.engine.setCell(x, y, true);
+      if (placed && this.engine.countCells() >= this.currentLevel.maxCells) {
+        this._flashLimitHint();
+      }
     } else {
       this.engine.setCell(x, y, false);
     }
@@ -329,6 +335,34 @@ export class ChallengeUI {
     if (remainingEl) remainingEl.textContent = `剩余可放: ${remaining} 个`;
   }
 
+  _showLimitHint() {
+    if (this._limitHintTimer) return;
+    const remainingEl = document.getElementById('challenge-remaining');
+    if (remainingEl) {
+      remainingEl.style.color = '#f44336';
+      remainingEl.style.fontWeight = 'bold';
+      remainingEl.textContent = '已达最大数量！';
+      clearTimeout(this._limitHintTimer);
+      this._limitHintTimer = setTimeout(() => {
+        this._limitHintTimer = null;
+        this._updatePlacementStatus();
+        remainingEl.style.color = '';
+        remainingEl.style.fontWeight = '';
+      }, 600);
+    }
+  }
+
+  _flashLimitHint() {
+    const remainingEl = document.getElementById('challenge-remaining');
+    if (remainingEl) {
+      remainingEl.style.color = '#ff9800';
+      remainingEl.style.transition = 'color 0.2s';
+      setTimeout(() => {
+        if (remainingEl) remainingEl.style.color = '';
+      }, 300);
+    }
+  }
+
   _updateGenerationDisplay() {
     if (!this.engine) return;
     const genEl = document.getElementById('challenge-generation');
@@ -348,6 +382,7 @@ export class ChallengeUI {
 
     this.engine.setInitialCells(initialCells);
     this.engine.setSpeed(30);
+    this._firstGoalMetGen = null;
 
     document.getElementById('challenge-start-btn').disabled = true;
     document.getElementById('challenge-clear-btn').disabled = true;
@@ -356,6 +391,7 @@ export class ChallengeUI {
       () => {
         this._updateGenerationDisplay();
         this._renderChallenge();
+        this._checkFirstGoalMet();
       },
       () => {
         this._onEvolutionComplete();
@@ -363,11 +399,19 @@ export class ChallengeUI {
     );
   }
 
+  _checkFirstGoalMet() {
+    if (this._firstGoalMetGen !== null) return;
+    if (ChallengeJudge.checkAllGoals(this.currentLevel, this.engine)) {
+      this._firstGoalMetGen = this.engine.generation;
+    }
+  }
+
   _onEvolutionComplete() {
     document.getElementById('challenge-start-btn').disabled = false;
     document.getElementById('challenge-clear-btn').disabled = false;
 
     const result = ChallengeJudge.evaluate(this.currentLevel, this.engine);
+    result.firstGoalMetGen = this._firstGoalMetGen;
     ChallengeProgress.updateLevelProgress(this.currentLevel.id, result);
 
     this._showResultModal(result);
@@ -437,6 +481,10 @@ export class ChallengeUI {
             <div class="stat-item">
               <span class="stat-label">周期状态</span>
               <span class="stat-value">${stats.isPeriodic ? (stats.periodLength === 0 ? '稳定态' : `周期${stats.periodLength}代`) : '未进入周期'}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">首次达成目标</span>
+              <span class="stat-value">${result.firstGoalMetGen !== null ? `第${result.firstGoalMetGen}代` : '未达成'}</span>
             </div>
           </div>
         </div>

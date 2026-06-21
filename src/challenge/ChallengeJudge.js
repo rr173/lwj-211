@@ -31,6 +31,14 @@ export class ChallengeJudge {
     };
   }
 
+  static checkAllGoals(level, engine) {
+    for (const goal of level.goals) {
+      const result = this._checkGoal(goal, engine);
+      if (!result.passed) return false;
+    }
+    return true;
+  }
+
   static _checkGoal(goal, engine) {
     switch (goal.type) {
       case 'minAlive':
@@ -125,9 +133,9 @@ export class ChallengeJudge {
     const minPossible = 1;
     if (usedCells <= minPossible) return 100;
 
-    const pointsPerCell = 90 / (maxCells - 1);
+    const pointsPerCell = 100 / (maxCells - 1);
     const score = 100 - (usedCells - 1) * pointsPerCell;
 
-    return Math.max(10, Math.round(score));
+    return Math.max(0, Math.round(score));
   }
 }
