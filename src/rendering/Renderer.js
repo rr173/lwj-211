@@ -1,5 +1,6 @@
 import { eventBus } from '../core/EventBus.js';
 import { CellStore } from '../core/CellStore.js';
+import { Topology, TOPOLOGY_TYPES } from '../core/Topology.js';
 
 export class Renderer {
   constructor(canvas, cellStore, viewState, colonyManager, resourceField = null, terrainLayer = null) {
@@ -208,8 +209,19 @@ export class Renderer {
     });
   }
 
-  setHoverCell(x, y) {
-    this.hoverCell = (x !== null && y !== null) ? { x, y } : null;
+  setHoverCell(x, y, extra = {}) {
+    if (x !== null && y !== null) {
+      const topology = Topology.getType();
+      if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+        this.hoverCell = { x, y, row: extra.row, col: extra.col, dir: extra.dir };
+      } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+        this.hoverCell = { x, y, q: extra.q || x, r: extra.r || y };
+      } else {
+        this.hoverCell = { x, y };
+      }
+    } else {
+      this.hoverCell = null;
+    }
     this.render();
   }
 
@@ -222,22 +234,35 @@ export class Renderer {
     const store = customStore || this.cellStore;
     if (!viewState.showGrid()) return;
 
+    const topology = Topology.getType();
     const { minX, minY, maxX, maxY } = viewState.getVisibleRect();
     const zoom = viewState.zoom;
+    const offsetX = viewState.offsetX;
+    const offsetY = viewState.offsetY;
 
+    if (topology === TOPOLOGY_TYPES.SQUARE) {
+      this._drawSquareGrid(ctx, zoom, offsetX, offsetY, minX, minY, maxX, maxY, viewState.canvasWidth, viewState.canvasHeight);
+    } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+      this._drawHexGrid(ctx, zoom, offsetX, offsetY, minX, minY, maxX, maxY);
+    } else if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+      this._drawTriGrid(ctx, zoom, offsetX, offsetY, minX, minY, maxX, maxY);
+    }
+  }
+
+  _drawSquareGrid(ctx, zoom, offsetX, offsetY, minX, minY, maxX, maxY, canvasWidth, canvasHeight) {
     ctx.strokeStyle = 'rgba(40, 60, 100, 0.4)';
     ctx.lineWidth = 1 / this.dpr;
 
     ctx.beginPath();
     for (let x = minX; x <= maxX; x++) {
-      const screenX = x * zoom + viewState.offsetX;
+      const screenX = x * zoom + offsetX;
       ctx.moveTo(screenX, 0);
-      ctx.lineTo(screenX, viewState.canvasHeight);
+      ctx.lineTo(screenX, canvasHeight);
     }
     for (let y = minY; y <= maxY; y++) {
-      const screenY = y * zoom + viewState.offsetY;
+      const screenY = y * zoom + offsetY;
       ctx.moveTo(0, screenY);
-      ctx.lineTo(viewState.canvasWidth, screenY);
+      ctx.lineTo(canvasWidth, screenY);
     }
     ctx.stroke();
 
@@ -246,17 +271,84 @@ export class Renderer {
       ctx.lineWidth = 1 / this.dpr;
       ctx.beginPath();
       for (let x = Math.ceil(minX / 10) * 10; x <= maxX; x += 10) {
-        const screenX = x * zoom + viewState.offsetX;
+        const screenX = x * zoom + offsetX;
         ctx.moveTo(screenX, 0);
-        ctx.lineTo(screenX, viewState.canvasHeight);
+        ctx.lineTo(screenX, canvasHeight);
       }
       for (let y = Math.ceil(minY / 10) * 10; y <= maxY; y += 10) {
-        const screenY = y * zoom + viewState.offsetY;
+        const screenY = y * zoom + offsetY;
         ctx.moveTo(0, screenY);
-        ctx.lineTo(viewState.canvasWidth, screenY);
+        ctx.lineTo(canvasWidth, screenY);
       }
       ctx.stroke();
     }
+  }
+
+  _drawHexGrid(ctx, zoom, offsetX, offsetY, minQ, minR, maxQ, maxR) {
+    const hexW = zoom * 3 / 4;
+    const hexH = zoom * Math.sqrt(3) / 2;
+    const s = zoom / 2;
+
+    ctx.strokeStyle = 'rgba(40, 60, 100, 0.4)';
+    ctx.lineWidth = 1 / this.dpr;
+    ctx.beginPath();
+
+    for (let r = minR; r <= maxR; r++) {
+      for (let q = minQ; q <= maxQ; q++) {
+        const cx = q * hexW * 2 + (r & 1 ? hexW : 0) + offsetX;
+        const cy = r * hexH + offsetY;
+        const vertices = [];
+        for (let i = 0; i < 6; i++) {
+          const angle = Math.PI / 3 * i + Math.PI / 6;
+          vertices.push({
+            x: cx + s * Math.cos(angle),
+            y: cy + s * Math.sin(angle)
+          });
+        }
+        ctx.moveTo(vertices[0].x, vertices[0].y);
+        for (let i = 1; i < 6; i++) {
+          ctx.lineTo(vertices[i].x, vertices[i].y);
+        }
+        ctx.lineTo(vertices[0].x, vertices[0].y);
+      }
+    }
+    ctx.stroke();
+  }
+
+  _drawTriGrid(ctx, zoom, offsetX, offsetY, minCol, minRow, maxCol, maxRow) {
+    const triW = zoom;
+    const triH = zoom * Math.sqrt(3) / 2;
+
+    ctx.strokeStyle = 'rgba(40, 60, 100, 0.4)';
+    ctx.lineWidth = 1 / this.dpr;
+    ctx.beginPath();
+
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        const dir = (row + col) % 2;
+        const baseX = col * triW / 2 + offsetX;
+        const baseY = row * triH + offsetY;
+        let vertices;
+        if (dir === 0) {
+          vertices = [
+            { x: baseX, y: baseY + triH },
+            { x: baseX + triW / 2, y: baseY },
+            { x: baseX + triW, y: baseY + triH }
+          ];
+        } else {
+          vertices = [
+            { x: baseX + triW / 2, y: baseY },
+            { x: baseX + triW, y: baseY + triH },
+            { x: baseX + triW * 1.5, y: baseY }
+          ];
+        }
+        ctx.moveTo(vertices[0].x, vertices[0].y);
+        ctx.lineTo(vertices[1].x, vertices[1].y);
+        ctx.lineTo(vertices[2].x, vertices[2].y);
+        ctx.lineTo(vertices[0].x, vertices[0].y);
+      }
+    }
+    ctx.stroke();
   }
 
   drawCells(ctx, customStore = null, viewState = this.viewState) {
@@ -265,9 +357,10 @@ export class Renderer {
     const zoom = viewState.zoom;
     const offsetX = viewState.offsetX;
     const offsetY = viewState.offsetY;
+    const topology = Topology.getType();
 
     const cells = store.getCellsInRect(minX, minY, maxX, maxY);
-    
+
     const cellsByColony = new Map();
     for (const cell of cells) {
       if (!cellsByColony.has(cell.colonyId)) {
@@ -281,30 +374,131 @@ export class Renderer {
       if (!colony) continue;
 
       ctx.fillStyle = colony.color;
-      ctx.beginPath();
 
       for (const cell of colonyCells) {
-        const sx = cell.x * zoom + offsetX;
-        const sy = cell.y * zoom + offsetY;
-        let cellSize = zoom;
-        let cellOffset = 0;
-
+        let pulseScale = 1;
         if (this.musicScheduler && this.musicScheduler.isPlaying) {
-          const pulseScale = this.musicScheduler.getPulseScale(cell.x, cell.y, colonyId);
-          if (pulseScale > 1) {
-            const sizeDiff = zoom * (pulseScale - 1);
-            cellSize = zoom + sizeDiff;
-            cellOffset = -sizeDiff / 2;
-          }
+          pulseScale = this.musicScheduler.getPulseScale(cell.x, cell.y, colonyId);
         }
 
-        if (zoom < 2) {
-          ctx.fillRect(sx, sy, Math.max(1, cellSize), Math.max(1, cellSize));
-        } else {
-          ctx.fillRect(sx + 0.5 + cellOffset, sy + 0.5 + cellOffset, cellSize - 1, cellSize - 1);
+        if (topology === TOPOLOGY_TYPES.SQUARE) {
+          this._drawSquareCell(ctx, cell, zoom, offsetX, offsetY, pulseScale);
+        } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+          this._drawHexCell(ctx, cell, zoom, offsetX, offsetY, pulseScale);
+        } else if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+          this._drawTriCell(ctx, cell, zoom, offsetX, offsetY, pulseScale);
         }
       }
     }
+  }
+
+  _drawSquareCell(ctx, cell, zoom, offsetX, offsetY, pulseScale) {
+    const sx = cell.x * zoom + offsetX;
+    const sy = cell.y * zoom + offsetY;
+    let cellSize = zoom;
+    let cellOffset = 0;
+
+    if (pulseScale > 1) {
+      const sizeDiff = zoom * (pulseScale - 1);
+      cellSize = zoom + sizeDiff;
+      cellOffset = -sizeDiff / 2;
+    }
+
+    if (zoom < 2) {
+      ctx.fillRect(sx, sy, Math.max(1, cellSize), Math.max(1, cellSize));
+    } else {
+      ctx.fillRect(sx + 0.5 + cellOffset, sy + 0.5 + cellOffset, cellSize - 1, cellSize - 1);
+    }
+  }
+
+  _drawHexCell(ctx, cell, zoom, offsetX, offsetY, pulseScale) {
+    const hexW = zoom * 3 / 4;
+    const hexH = zoom * Math.sqrt(3) / 2;
+    const q = cell.q !== undefined ? cell.q : cell.x;
+    const r = cell.r !== undefined ? cell.r : cell.y;
+    const cx = q * hexW * 2 + (r & 1 ? hexW : 0) + offsetX;
+    const cy = r * hexH + offsetY;
+
+    const baseScale = pulseScale > 1 ? pulseScale : 1;
+    const s = (zoom / 2) * baseScale - (zoom >= 4 ? 0.5 : 0);
+
+    if (zoom < 2) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(1, s * 0.6), 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = Math.PI / 3 * i + Math.PI / 6;
+      const px = cx + s * Math.cos(angle);
+      const py = cy + s * Math.sin(angle);
+      if (i === 0) {
+        ctx.moveTo(px, py);
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  _drawTriCell(ctx, cell, zoom, offsetX, offsetY, pulseScale) {
+    const triW = zoom;
+    const triH = zoom * Math.sqrt(3) / 2;
+    const row = cell.row !== undefined ? cell.row : cell.y;
+    const col = cell.col !== undefined ? cell.col : cell.x;
+    const dir = cell.dir !== undefined ? cell.dir : ((row + col) % 2);
+
+    const baseX = col * triW / 2 + offsetX;
+    const baseY = row * triH + offsetY;
+
+    const baseScale = pulseScale > 1 ? pulseScale : 1;
+    const inset = zoom >= 4 ? 0.5 : 0;
+    const scale = baseScale * (1 - inset / zoom);
+
+    let vertices;
+    if (dir === 0) {
+      vertices = [
+        { x: baseX + inset, y: baseY + triH - inset },
+        { x: baseX + triW / 2, y: baseY + inset },
+        { x: baseX + triW - inset, y: baseY + triH - inset }
+      ];
+    } else {
+      vertices = [
+        { x: baseX + triW / 2, y: baseY + inset },
+        { x: baseX + triW - inset, y: baseY + triH - inset },
+        { x: baseX + triW * 1.5 - inset, y: baseY + inset }
+      ];
+    }
+
+    if (scale !== 1) {
+      const cx = (vertices[0].x + vertices[1].x + vertices[2].x) / 3;
+      const cy = (vertices[0].y + vertices[1].y + vertices[2].y) / 3;
+      for (let i = 0; i < 3; i++) {
+        vertices[i] = {
+          x: cx + (vertices[i].x - cx) * scale,
+          y: cy + (vertices[i].y - cy) * scale
+        };
+      }
+    }
+
+    if (zoom < 2) {
+      const cx = (vertices[0].x + vertices[1].x + vertices[2].x) / 3;
+      const cy = (vertices[0].y + vertices[1].y + vertices[2].y) / 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(1, zoom * 0.4), 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(vertices[0].x, vertices[0].y);
+    ctx.lineTo(vertices[1].x, vertices[1].y);
+    ctx.lineTo(vertices[2].x, vertices[2].y);
+    ctx.closePath();
+    ctx.fill();
   }
 
   drawMusicScanColumn(ctx, viewState = this.viewState) {
@@ -341,36 +535,105 @@ export class Renderer {
 
   drawHoverCell(ctx, viewState = this.viewState) {
     if (!this.hoverCell || this.placingCells) return;
-    
-    const colony = this.colonyManager.getSelected();
-    if (!colony) return;
 
-    const { x, y } = this.hoverCell;
-    const zoom = viewState.zoom;
-    const sx = x * zoom + viewState.offsetX;
-    const sy = y * zoom + viewState.offsetY;
-
-    ctx.fillStyle = colony.color + '60';
-    if (zoom < 2) {
-      ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
-    } else {
-      ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
-    }
-
-    ctx.strokeStyle = colony.color;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(sx + 1, sy + 1, zoom - 2, zoom - 2);
-  }
-
-  drawPlacingPattern(ctx, viewState = this.viewState) {
-    if (!this.placingCells || !this.hoverCell) return;
-    
     const colony = this.colonyManager.getSelected();
     if (!colony) return;
 
     const zoom = viewState.zoom;
     const offsetX = viewState.offsetX;
     const offsetY = viewState.offsetY;
+    const topology = Topology.getType();
+
+    ctx.fillStyle = colony.color + '60';
+    ctx.strokeStyle = colony.color;
+    ctx.lineWidth = 2;
+
+    if (topology === TOPOLOGY_TYPES.SQUARE) {
+      const { x, y } = this.hoverCell;
+      const sx = x * zoom + offsetX;
+      const sy = y * zoom + offsetY;
+      if (zoom < 2) {
+        ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+      } else {
+        ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
+        ctx.strokeRect(sx + 1, sy + 1, zoom - 2, zoom - 2);
+      }
+    } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+      const q = this.hoverCell.q !== undefined ? this.hoverCell.q : this.hoverCell.x;
+      const r = this.hoverCell.r !== undefined ? this.hoverCell.r : this.hoverCell.y;
+      this._drawHexHover(ctx, q, r, zoom, offsetX, offsetY);
+    } else if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+      const row = this.hoverCell.row !== undefined ? this.hoverCell.row : this.hoverCell.y;
+      const col = this.hoverCell.col !== undefined ? this.hoverCell.col : this.hoverCell.x;
+      const dir = this.hoverCell.dir !== undefined ? this.hoverCell.dir : ((row + col) % 2);
+      this._drawTriHover(ctx, row, col, dir, zoom, offsetX, offsetY);
+    }
+  }
+
+  _drawHexHover(ctx, q, r, zoom, offsetX, offsetY) {
+    const hexW = zoom * 3 / 4;
+    const hexH = zoom * Math.sqrt(3) / 2;
+    const cx = q * hexW * 2 + (r & 1 ? hexW : 0) + offsetX;
+    const cy = r * hexH + offsetY;
+    const s = zoom / 2 - 0.5;
+
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const angle = Math.PI / 3 * i + Math.PI / 6;
+      const px = cx + s * Math.cos(angle);
+      const py = cy + s * Math.sin(angle);
+      if (i === 0) {
+        ctx.moveTo(px, py);
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  _drawTriHover(ctx, row, col, dir, zoom, offsetX, offsetY) {
+    const triW = zoom;
+    const triH = zoom * Math.sqrt(3) / 2;
+    const baseX = col * triW / 2 + offsetX;
+    const baseY = row * triH + offsetY;
+    const inset = 1;
+
+    let vertices;
+    if (dir === 0) {
+      vertices = [
+        { x: baseX + inset, y: baseY + triH - inset },
+        { x: baseX + triW / 2, y: baseY + inset },
+        { x: baseX + triW - inset, y: baseY + triH - inset }
+      ];
+    } else {
+      vertices = [
+        { x: baseX + triW / 2, y: baseY + inset },
+        { x: baseX + triW - inset, y: baseY + triH - inset },
+        { x: baseX + triW * 1.5 - inset, y: baseY + inset }
+      ];
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(vertices[0].x, vertices[0].y);
+    ctx.lineTo(vertices[1].x, vertices[1].y);
+    ctx.lineTo(vertices[2].x, vertices[2].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  drawPlacingPattern(ctx, viewState = this.viewState) {
+    if (!this.placingCells || !this.hoverCell) return;
+
+    const colony = this.colonyManager.getSelected();
+    if (!colony) return;
+
+    const zoom = viewState.zoom;
+    const offsetX = viewState.offsetX;
+    const offsetY = viewState.offsetY;
+    const topology = Topology.getType();
     const baseX = this.hoverCell.x;
     const baseY = this.hoverCell.y;
 
@@ -378,18 +641,27 @@ export class Renderer {
     for (const [dx, dy] of this.placingCells) {
       const x = baseX + dx;
       const y = baseY + dy;
-      const sx = x * zoom + offsetX;
-      const sy = y * zoom + offsetY;
-      if (zoom < 2) {
-        ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
-      } else {
-        ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
+      if (topology === TOPOLOGY_TYPES.SQUARE) {
+        const sx = x * zoom + offsetX;
+        const sy = y * zoom + offsetY;
+        if (zoom < 2) {
+          ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+        } else {
+          ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
+        }
+      } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+        this._drawHexCell(ctx, { q: x, r: y, x, y }, zoom, offsetX, offsetY, 1);
+      } else if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+        const dir = ((y + x) % 2 + 2) % 2;
+        this._drawTriCell(ctx, { row: y, col: x, dir, x, y }, zoom, offsetX, offsetY, 1);
       }
     }
   }
 
   drawBlueprintSelection(ctx, viewState = this.viewState) {
     if (!this.blueprintSelectionRect) return;
+    const topology = Topology.getType();
+    if (topology !== TOPOLOGY_TYPES.SQUARE) return;
 
     const { minX, maxX, minY, maxY } = this.blueprintSelectionRect;
     const zoom = viewState.zoom;
@@ -417,23 +689,31 @@ export class Renderer {
     const zoom = viewState.zoom;
     const offsetX = viewState.offsetX;
     const offsetY = viewState.offsetY;
+    const topology = Topology.getType();
     const baseX = this.hoverCell.x;
     const baseY = this.hoverCell.y;
 
-    const color = this.placingBlueprintColor || 
-      (this.colonyManager.getSelected()?.color) || 
+    const color = this.placingBlueprintColor ||
+      (this.colonyManager.getSelected()?.color) ||
       '#4fc3f7';
 
     ctx.fillStyle = color + '80';
     for (const [dx, dy] of this.placingBlueprintCells) {
       const x = baseX + dx;
       const y = baseY + dy;
-      const sx = x * zoom + offsetX;
-      const sy = y * zoom + offsetY;
-      if (zoom < 2) {
-        ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
-      } else {
-        ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
+      if (topology === TOPOLOGY_TYPES.SQUARE) {
+        const sx = x * zoom + offsetX;
+        const sy = y * zoom + offsetY;
+        if (zoom < 2) {
+          ctx.fillRect(sx, sy, Math.max(1, zoom), Math.max(1, zoom));
+        } else {
+          ctx.fillRect(sx + 0.5, sy + 0.5, zoom - 1, zoom - 1);
+        }
+      } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+        this._drawHexCell(ctx, { q: x, r: y, x, y }, zoom, offsetX, offsetY, 1);
+      } else if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+        const dir = ((y + x) % 2 + 2) % 2;
+        this._drawTriCell(ctx, { row: y, col: x, dir, x, y }, zoom, offsetX, offsetY, 1);
       }
     }
   }

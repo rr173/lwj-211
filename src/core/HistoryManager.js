@@ -2,11 +2,13 @@ import { eventBus } from './EventBus.js';
 import { CellStore } from './CellStore.js';
 import { ResourceField } from './ResourceField.js';
 import { TerrainLayer } from '../terrain/TerrainLayer.js';
+import { Topology, TOPOLOGY_TYPES } from './Topology.js';
 
 export class Snapshot {
   constructor(generation, cellStore, colonyManager, resourceField = null, terrainLayer = null) {
     this.generation = generation;
     this.timestamp = Date.now();
+    this.topology = Topology.getType();
     this.cells = cellStore.toJSON();
     this.colonyStates = new Map();
     for (const colony of colonyManager.getAll()) {
@@ -24,9 +26,17 @@ export class Snapshot {
   }
 
   restoreTo(cellStore, colonyManager, resourceField = null, terrainLayer = null) {
+    Topology.setType(this.topology);
     cellStore.clear();
-    for (const cell of this.cells) {
-      cellStore.set(cell.x, cell.y, cell.c);
+    const cellsData = (this.cells && this.cells.cells) ? this.cells.cells : (this.cells || []);
+    for (const cell of cellsData) {
+      if (this.topology === TOPOLOGY_TYPES.TRIANGULAR) {
+        cellStore.set(cell.row, cell.col, cell.dir, cell.c);
+      } else if (this.topology === TOPOLOGY_TYPES.HEXAGONAL) {
+        cellStore.set(cell.q, cell.r, cell.c);
+      } else {
+        cellStore.set(cell.x, cell.y, cell.c);
+      }
     }
     for (const colony of colonyManager.getAll()) {
       const state = this.colonyStates.get(colony.id);
@@ -213,6 +223,7 @@ export class HistoryManager {
     const newBranch = new Branch(name, newId, snapshot.generation, sourceId);
 
     const clonedSnapshot = new Snapshot(snapshot.generation, this.cellStore, this.colonyManager, this.resourceField, this.terrainLayer);
+    clonedSnapshot.topology = snapshot.topology;
     clonedSnapshot.cells = JSON.parse(JSON.stringify(snapshot.cells));
     clonedSnapshot.colonyStates = new Map(snapshot.colonyStates);
     clonedSnapshot.resources = snapshot.resources ? JSON.parse(JSON.stringify(snapshot.resources)) : null;
@@ -404,6 +415,21 @@ export class HistoryManager {
       this.isBrowsingHistory = false;
       this.browsingGeneration = null;
     }
+    eventBus.emit('timeline:changed', this._getTimelineData());
+  }
+
+  clearAll() {
+    this.branches.clear();
+    this.branchCounter = 0;
+    this.compareMode = false;
+    this.compareBranchIds = [];
+    this.compareViewStates = {};
+    this.isBrowsingHistory = false;
+    this.browsingGeneration = null;
+    this._jumpSnapshotGen = undefined;
+    this.catchUpMode = false;
+    this._initMainBranch();
+    eventBus.emit('branches:changed', this.getAllBranches());
     eventBus.emit('timeline:changed', this._getTimelineData());
   }
 }

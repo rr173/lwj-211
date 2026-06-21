@@ -196,6 +196,43 @@ textarea:focus {
   padding: 6px;
 }
 
+.topology-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.topology-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: #1a1a2e;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.2s;
+}
+
+.topology-btn:hover {
+  border-color: #e94560;
+  color: #e0e0e0;
+}
+
+.topology-btn.active {
+  background: #0f3460;
+  border-color: #e94560;
+  color: #e94560;
+  box-shadow: 0 0 0 1px #e94560;
+}
+
+.topology-btn svg {
+  display: block;
+}
+
 .hint {
   margin-top: 8px;
   font-size: 11px;

@@ -4,6 +4,7 @@ import { Colony } from '../core/Colony.js';
 import { ResourceField } from '../core/ResourceField.js';
 import { parseRLE } from '../engine/PatternManager.js';
 import { TerrainLayer } from '../terrain/TerrainLayer.js';
+import { Topology, TOPOLOGY_TYPES } from '../core/Topology.js';
 
 export class UIManager {
   constructor(colonyManager, engine, patternManager, cellStore, viewState, historyManager = null, resourceField = null, patternLibrary = null, terrainLayer = null) {
@@ -52,6 +53,16 @@ export class UIManager {
   }
 
   bindUIEvents() {
+    const topologyBtns = document.querySelectorAll('.topology-btn');
+    if (topologyBtns.length > 0) {
+      topologyBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const topology = btn.dataset.topology;
+          this.switchTopology(topology);
+        });
+      });
+    }
+
     document.querySelectorAll('.panel-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         const tabName = tab.dataset.tab;
@@ -222,7 +233,7 @@ export class UIManager {
     }
 
     eventBus.on('mouse:hover', (world) => {
-      this.renderer?.setHoverCell?.(world.x, world.y);
+      this.renderer?.setHoverCell?.(world);
     });
 
     if (this.historyManager) {
@@ -512,6 +523,68 @@ export class UIManager {
     this.renderer = renderer;
   }
 
+  switchTopology(type) {
+    const current = Topology.getType();
+    if (current === type) return;
+
+    const typeNames = {
+      [TOPOLOGY_TYPES.SQUARE]: '正方形',
+      [TOPOLOGY_TYPES.HEXAGONAL]: '六边形',
+      [TOPOLOGY_TYPES.TRIANGULAR]: '三角形'
+    };
+
+    if (this.cellStore.size() > 0) {
+      if (!confirm(`切换到${typeNames[type]}网格将清空所有细胞和历史快照,确定继续?`)) {
+        document.querySelectorAll('.topology-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.topology === current);
+        });
+        return;
+      }
+    }
+
+    Topology.setType(type);
+    this.cellStore.clear();
+    this.engine.reset();
+
+    if (this.historyManager) {
+      this.historyManager.clearAll();
+      this.updateBranchList();
+      this.updateTimeline();
+    }
+
+    if (this.terrainLayer) {
+      this.terrainLayer.clear();
+      this.updatePortalPairList();
+    }
+
+    document.querySelectorAll('.topology-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.topology === type);
+    });
+
+    const infoEl = document.getElementById('topology-info');
+    if (infoEl) {
+      if (type === TOPOLOGY_TYPES.SQUARE) {
+        infoEl.textContent = '正方形: Moore(8邻居) 或 VN(4邻居)';
+      } else if (type === TOPOLOGY_TYPES.HEXAGONAL) {
+        infoEl.textContent = '六边形: 固定6邻居 (蜂巢排列)';
+      } else if (type === TOPOLOGY_TYPES.TRIANGULAR) {
+        infoEl.textContent = '三角形: 固定3邻居 (等边交替)';
+      }
+    }
+
+    const terrainBtn = document.querySelector('[data-terrain="none"]');
+    if (terrainBtn) {
+      this.selectTerrain('none');
+    }
+
+    this.viewState.fitToView();
+    eventBus.emit('topology:changed', type);
+    eventBus.emit('state:updated');
+    eventBus.emit('view:changed');
+
+    this.showToast(`已切换到${typeNames[type]}网格`);
+  }
+
   bindEventBus() {
     eventBus.on('colony:added', () => this.updateColonyList());
     eventBus.on('colony:removed', () => this.updateColonyList());
@@ -568,6 +641,21 @@ export class UIManager {
     }
 
     const { birth, survival } = Rule.parseBS(bs);
+    const topology = Topology.getType();
+    const maxNeighbors = Topology.getMaxNeighbors(topology, neighborhood);
+
+    const maxBirth = Math.max(...birth, 0);
+    const maxSurv = Math.max(...survival, 0);
+    if (maxBirth > maxNeighbors || maxSurv > maxNeighbors) {
+      const topoNames = {
+        [TOPOLOGY_TYPES.SQUARE]: '正方形(' + (neighborhood === 'vonneumann' ? 'VN4' : 'Moore8') + ')',
+        [TOPOLOGY_TYPES.HEXAGONAL]: '六边形(6)',
+        [TOPOLOGY_TYPES.TRIANGULAR]: '三角形(3)'
+      };
+      alert(`当前拓扑${topoNames[topology]}最多支持${maxNeighbors}个邻居,规则中存在超过上限的数字`);
+      return;
+    }
+
     const rule = new Rule({
       name: name || bs,
       color,
@@ -592,6 +680,21 @@ export class UIManager {
   addQuickRule(str) {
     if (!str.trim()) return;
     const rule = Rule.fromString(str);
+    
+    const topology = Topology.getType();
+    const maxNeighbors = Topology.getMaxNeighbors(topology, rule.neighborhood);
+    const maxBirth = Math.max(...rule.birth, 0);
+    const maxSurv = Math.max(...rule.survival, 0);
+    if (maxBirth > maxNeighbors || maxSurv > maxNeighbors) {
+      const topoNames = {
+        [TOPOLOGY_TYPES.SQUARE]: '正方形(' + (rule.neighborhood === 'vonneumann' ? 'VN4' : 'Moore8') + ')',
+        [TOPOLOGY_TYPES.HEXAGONAL]: '六边形(6)',
+        [TOPOLOGY_TYPES.TRIANGULAR]: '三角形(3)'
+      };
+      alert(`当前拓扑${topoNames[topology]}最多支持${maxNeighbors}个邻居,规则中存在超过上限的数字`);
+      return;
+    }
+
     rule.color = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
     const colony = new Colony(rule);
     this.colonyManager.addColony(colony);
@@ -652,13 +755,41 @@ export class UIManager {
         
         this.engine.loadFromJSON(data.engine || {});
         
+        let importedTopology = TOPOLOGY_TYPES.SQUARE;
+        if (data.cells && typeof data.cells === 'object' && data.cells.topology) {
+          importedTopology = data.cells.topology;
+        }
+        Topology.setType(importedTopology);
+        
+        document.querySelectorAll('.topology-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.topology === importedTopology);
+        });
+        
+        const infoEl = document.getElementById('topology-info');
+        if (infoEl) {
+          if (importedTopology === TOPOLOGY_TYPES.SQUARE) {
+            infoEl.textContent = '正方形: Moore(8邻居) 或 VN(4邻居)';
+          } else if (importedTopology === TOPOLOGY_TYPES.HEXAGONAL) {
+            infoEl.textContent = '六边形: 固定6邻居 (蜂巢排列)';
+          } else if (importedTopology === TOPOLOGY_TYPES.TRIANGULAR) {
+            infoEl.textContent = '三角形: 固定3邻居 (等边交替)';
+          }
+        }
+        
         for (const colonyData of data.colonies || []) {
           const colony = Colony.fromJSON(colonyData);
           this.colonyManager.addColony(colony);
         }
         
-        for (const cell of data.cells || []) {
-          this.cellStore.set(cell.x, cell.y, cell.c);
+        const cellsData = (data.cells && data.cells.cells) ? data.cells.cells : (data.cells || []);
+        for (const cell of cellsData) {
+          if (importedTopology === TOPOLOGY_TYPES.TRIANGULAR) {
+            this.cellStore.set(cell.row, cell.col, cell.dir, cell.c);
+          } else if (importedTopology === TOPOLOGY_TYPES.HEXAGONAL) {
+            this.cellStore.set(cell.q, cell.r, cell.c);
+          } else {
+            this.cellStore.set(cell.x, cell.y, cell.c);
+          }
         }
         
         if (this.resourceField && data.resources) {
@@ -680,13 +811,22 @@ export class UIManager {
           }
         }
         
+        if (this.historyManager) {
+          this.historyManager.clearAll();
+          this.updateBranchList();
+          this.updateTimeline();
+        }
+        
         document.getElementById('collision-strategy').value = this.engine.collisionStrategy;
         document.getElementById('speed-slider').value = this.engine.speed;
         document.getElementById('speed-value').textContent = 
           this.engine.speed === 100 ? '尽可能快' : `${this.engine.speed}代/秒`;
         
+        this.viewState.fitToView();
         this.updateAll();
+        eventBus.emit('topology:changed', importedTopology);
         eventBus.emit('state:updated');
+        eventBus.emit('view:changed');
         eventBus.emit('generation:changed', this.engine.generation);
         alert('导入成功');
       } catch (err) {

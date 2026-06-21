@@ -1,6 +1,7 @@
 import { eventBus } from '../core/EventBus.js';
 import { ResourceField } from '../core/ResourceField.js';
 import { CellStore } from '../core/CellStore.js';
+import { Topology, TOPOLOGY_TYPES } from '../core/Topology.js';
 
 const MOORE = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
 const VN = [[0, -1], [1, 0], [0, 1], [-1, 0]];
@@ -126,15 +127,14 @@ export class EvolutionEngine {
 
     const allCells = cellStore.getAllCells();
     const cellCount = allCells.length;
+    const topology = Topology.getType();
 
-    const cellsX = new Array(cellCount);
-    const cellsY = new Array(cellCount);
+    const cellsCoord = new Array(cellCount);
     const cellsKey = new Array(cellCount);
     const cellsColony = new Array(cellCount);
     for (let i = 0; i < cellCount; i++) {
       const c = allCells[i];
-      cellsX[i] = c.x;
-      cellsY[i] = c.y;
+      cellsCoord[i] = c;
       cellsKey[i] = c.key;
       cellsColony[i] = c.colonyId;
     }
@@ -151,11 +151,13 @@ export class EvolutionEngine {
         if (!colony || colony.paused) continue;
         const consumptionRate = colony.rule.consumptionRate;
         if (consumptionRate > 0) {
-          if (terrain && terrain.isFertileZone(cellsX[i], cellsY[i])) {
+          const cx = cellsCoord[i].x;
+          const cy = cellsCoord[i].y;
+          if (terrain && terrain.isFertileZone(cx, cy)) {
             continue;
           }
-          const remaining = this.resourceField.consume(cellsX[i], cellsY[i], consumptionRate);
-          if (remaining === 0 && this.resourceField.get(cellsX[i], cellsY[i]) === 0) {
+          const remaining = this.resourceField.consume(cx, cy, consumptionRate);
+          if (remaining === 0 && this.resourceField.get(cx, cy) === 0) {
             starvedCells.add(cellsKey[i]);
           }
         }
@@ -164,18 +166,32 @@ export class EvolutionEngine {
 
     const producers = activeColonies.filter(c => c.rule.productionRate > 0);
     if (this.resourceField && producers.length > 0) {
-      const VN_OFFSETS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
       for (let i = 0; i < cellCount; i++) {
         if (starvedCells.has(cellsKey[i])) continue;
         const colony = this.colonyManager.getColony(cellsColony[i]);
         if (!colony || colony.paused) continue;
         const productionRate = colony.rule.productionRate;
         if (productionRate > 0) {
-          for (const [dx, dy] of VN_OFFSETS) {
-            const nx = cellsX[i] + dx;
-            const ny = cellsY[i] + dy;
-            if (!cellStore.has(nx, ny)) {
-              this.resourceField.add(nx, ny, productionRate);
+          const coord = cellsCoord[i];
+          let neighbors;
+          if (topology === TOPOLOGY_TYPES.SQUARE) {
+            neighbors = Topology.getNeighbors(coord.x, coord.y, 'vonneumann');
+          } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+            neighbors = Topology.getNeighbors(coord.q, coord.r);
+          } else {
+            neighbors = Topology.getNeighbors(coord.row, coord.col, coord.dir);
+          }
+          for (const ncoord of neighbors) {
+            const nx = ncoord[0];
+            const ny = ncoord[1];
+            if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+              if (!cellStore.has(ncoord[0], ncoord[1], ncoord[2])) {
+                this.resourceField.add(ny, nx, productionRate);
+              }
+            } else {
+              if (!cellStore.has(nx, ny)) {
+                this.resourceField.add(nx, ny, productionRate);
+              }
             }
           }
         }
@@ -197,13 +213,31 @@ export class EvolutionEngine {
         if (!colony || colony.paused) continue;
         const predPower = colony.rule.predationPower;
         if (predPower > 0) {
-          const offsets = colony.rule.neighborhood === 'vonneumann' ? VN : MOORE;
-          for (const [dx, dy] of offsets) {
-            const nx = cellsX[i] + dx;
-            const ny = cellsY[i] + dy;
+          const coord = cellsCoord[i];
+          let neighbors;
+          if (topology === TOPOLOGY_TYPES.SQUARE) {
+            const nh = colony.rule.neighborhood === 'vonneumann' ? 'vonneumann' : 'moore';
+            neighbors = Topology.getNeighbors(coord.x, coord.y, nh);
+          } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+            neighbors = Topology.getNeighbors(coord.q, coord.r);
+          } else {
+            neighbors = Topology.getNeighbors(coord.row, coord.col, coord.dir);
+          }
+
+          for (const ncoord of neighbors) {
+            let neighborCell, nkey, nx, ny;
+            if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+              neighborCell = cellStore.get(ncoord[0], ncoord[1], ncoord[2]);
+              nkey = CellStore.key(ncoord[0], ncoord[1], ncoord[2]);
+              nx = ncoord[1];
+              ny = ncoord[0];
+            } else {
+              neighborCell = cellStore.get(ncoord[0], ncoord[1]);
+              nkey = CellStore.key(ncoord[0], ncoord[1]);
+              nx = ncoord[0];
+              ny = ncoord[1];
+            }
             if (terrain && terrain.isWall(nx, ny)) continue;
-            const nkey = `${nx},${ny}`;
-            const neighborCell = cellStore.get(nx, ny);
             if (neighborCell && neighborCell.colonyId !== colony.id) {
               const neighborColony = this.colonyManager.getColony(neighborCell.colonyId);
               if (neighborColony && !neighborColony.paused) {
@@ -228,7 +262,7 @@ export class EvolutionEngine {
     }
 
     const { newMap: firstPassMap, newColonyCounts: firstPassCounts, newCount: firstPassCount } =
-      this._computeEvolutionStep(cellsX, cellsY, cellsKey, cellsColony, cellCount, activeColonies, starvedCells, predationVictims, cellStore);
+      this._computeEvolutionStep(cellsCoord, cellsKey, cellsColony, cellCount, activeColonies, starvedCells, predationVictims, cellStore);
 
     let finalMap = firstPassMap;
     let finalColonyCounts = firstPassCounts;
@@ -236,32 +270,29 @@ export class EvolutionEngine {
 
     const isOddGen = this.generation % 2 === 0;
 
-    if (terrain && isOddGen) {
+    if (terrain && isOddGen && topology === TOPOLOGY_TYPES.SQUARE) {
       const tempCells = [];
       for (const [key, cell] of firstPassMap.entries()) {
         tempCells.push(cell);
       }
-      const tx = new Array(tempCells.length);
-      const ty = new Array(tempCells.length);
+      const tCoord = new Array(tempCells.length);
       const tkey = new Array(tempCells.length);
       const tcol = new Array(tempCells.length);
       for (let i = 0; i < tempCells.length; i++) {
-        tx[i] = tempCells[i].x;
-        ty[i] = tempCells[i].y;
-        tkey[i] = CellStore.key(tempCells[i].x, tempCells[i].y);
+        tCoord[i] = tempCells[i];
+        tkey[i] = tempCells[i].key;
         tcol[i] = tempCells[i].colonyId;
       }
 
-      const { newMap: speedMap, newColonyCounts: speedCounts, newCount: speedCount } =
-        this._computeEvolutionStep(tx, ty, tkey, tcol, tempCells.length, activeColonies, new Set(), new Set(), null, 'speed');
+      const { newMap: speedMap } =
+        this._computeEvolutionStep(tCoord, tkey, tcol, tempCells.length, activeColonies, new Set(), new Set(), null, 'speed');
 
       const mergedMap = new Map(firstPassMap);
       const mergedCounts = new Map(firstPassCounts);
 
       for (const [key, cell] of speedMap.entries()) {
-        const comma = key.indexOf(',');
-        const x = +key.slice(0, comma);
-        const y = +key.slice(comma + 1);
+        const x = cell.x;
+        const y = cell.y;
         if (terrain.isSpeedZone(x, y)) {
           const existing = mergedMap.get(key);
           if (existing) {
@@ -280,13 +311,12 @@ export class EvolutionEngine {
       finalCount = mergedCount;
     }
 
-    if (terrain) {
+    if (terrain && topology === TOPOLOGY_TYPES.SQUARE) {
       const iceMap = new Map();
       const iceCounts = new Map();
       for (const [key, cell] of finalMap.entries()) {
-        const comma = key.indexOf(',');
-        const x = +key.slice(0, comma);
-        const y = +key.slice(comma + 1);
+        const x = cell.x;
+        const y = cell.y;
         if (terrain.isIceZone(x, y)) {
           if (this.generation % 2 !== 0) {
             const oldCell = cellStore.get(x, y);
@@ -321,7 +351,13 @@ export class EvolutionEngine {
       if (pausedIds[cellsColony[i]]) {
         const key = cellsKey[i];
         if (!finalMap.has(key)) {
-          const cell = cellStore.get(cellsX[i], cellsY[i]);
+          const coord = cellsCoord[i];
+          let cell;
+          if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+            cell = cellStore.get(coord.row, coord.col, coord.dir);
+          } else {
+            cell = cellStore.get(coord.x, coord.y);
+          }
           if (cell) {
             finalMap.set(key, cell);
             finalCount++;
@@ -380,32 +416,47 @@ export class EvolutionEngine {
     eventBus.emit('generation:changed', this.generation);
   }
 
-  _computeEvolutionStep(cellsX, cellsY, cellsKey, cellsColony, cellCount, activeColonies, starvedCells, predationVictims, cellStore, mode = 'normal') {
+  _computeEvolutionStep(cellsCoord, cellsKey, cellsColony, cellCount, activeColonies, starvedCells, predationVictims, cellStore, mode = 'normal') {
     const terrain = this.terrainLayer;
     const neighborMap = {};
+    const topology = Topology.getType();
 
     for (let ai = 0; ai < activeColonies.length; ai++) {
       const colony = activeColonies[ai];
       const cid = colony.id;
-      const offsets = colony.rule.neighborhood === 'vonneumann' ? VN : MOORE;
-      const nbLen = offsets.length;
 
       for (let celli = 0; celli < cellCount; celli++) {
         if (cellsColony[celli] !== cid) continue;
         if (starvedCells.has(cellsKey[celli])) continue;
         if (predationVictims.has(cellsKey[celli])) continue;
-        const cellx = cellsX[celli];
-        const celly = cellsY[celli];
+        const coord = cellsCoord[celli];
 
-        for (let ni = 0; ni < nbLen; ni++) {
-          const nx = cellx + offsets[ni][0];
-          const ny = celly + offsets[ni][1];
+        let neighbors;
+        if (topology === TOPOLOGY_TYPES.SQUARE) {
+          const nh = colony.rule.neighborhood === 'vonneumann' ? 'vonneumann' : 'moore';
+          neighbors = Topology.getNeighbors(coord.x, coord.y, nh);
+        } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+          neighbors = Topology.getNeighbors(coord.q, coord.r);
+        } else {
+          neighbors = Topology.getNeighbors(coord.row, coord.col, coord.dir);
+        }
+
+        for (const ncoord of neighbors) {
+          let nkey, nx, ny;
+          if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+            nkey = CellStore.key(ncoord[0], ncoord[1], ncoord[2]);
+            nx = ncoord[1];
+            ny = ncoord[0];
+          } else {
+            nkey = CellStore.key(ncoord[0], ncoord[1]);
+            nx = ncoord[0];
+            ny = ncoord[1];
+          }
           if (terrain && terrain.isWall(nx, ny)) continue;
-          const key = nx + ',' + ny;
-          let counts = neighborMap[key];
+          let counts = neighborMap[nkey];
           if (!counts) {
             counts = {};
-            neighborMap[key] = counts;
+            neighborMap[nkey] = counts;
           }
           counts[cid] = (counts[cid] || 0) + 1;
         }
@@ -425,11 +476,12 @@ export class EvolutionEngine {
         if (starvedCells.has(cellsKey[celli])) continue;
         if (predationVictims.has(cellsKey[celli])) continue;
         const key = cellsKey[celli];
+        const coord = cellsCoord[celli];
         const counts = neighborMap[key];
         const n = counts ? (counts[cid] || 0) : 0;
         if (survival.has(n)) {
           if (!candidates[key]) candidates[key] = [];
-          candidates[key].push({ x: cellsX[celli], y: cellsY[celli], cid, colony, n, birth: 0 });
+          candidates[key].push({ coord, cid, colony, n, birth: 0 });
         }
       }
     }
@@ -443,22 +495,27 @@ export class EvolutionEngine {
         }
       }
       const counts = neighborMap[key];
-      const comma = key.indexOf(',');
-      const x = +key.slice(0, comma);
-      const y = +key.slice(comma + 1);
+      const parsed = Topology.parseKey(key);
 
-      if (terrain && terrain.isWall(x, y)) continue;
+      let tx, ty;
+      if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+        tx = parsed.col;
+        ty = parsed.row;
+      } else {
+        tx = parsed.x;
+        ty = parsed.y;
+      }
 
-      let targetX = x;
-      let targetY = y;
+      if (terrain && terrain.isWall(tx, ty)) continue;
+
       let targetKey = key;
+      let targetCoord = parsed;
 
-      if (terrain && terrain.isPortal(x, y)) {
-        const partner = terrain.getPortalPartner(x, y);
+      if (terrain && topology === TOPOLOGY_TYPES.SQUARE && terrain.isPortal(tx, ty)) {
+        const partner = terrain.getPortalPartner(tx, ty);
         if (partner && !terrain.isWall(partner.x, partner.y)) {
-          targetX = partner.x;
-          targetY = partner.y;
           targetKey = CellStore.key(partner.x, partner.y);
+          targetCoord = { x: partner.x, y: partner.y, row: partner.y, col: partner.x };
         }
       }
 
@@ -467,7 +524,7 @@ export class EvolutionEngine {
         const n = counts[colony.id] || 0;
         if (colony.rule.birth.has(n)) {
           if (!candidates[targetKey]) candidates[targetKey] = [];
-          candidates[targetKey].push({ x: targetX, y: targetY, cid: colony.id, colony, n, birth: 1 });
+          candidates[targetKey].push({ coord: targetCoord, cid: colony.id, colony, n, birth: 1 });
         }
       }
     }
@@ -494,7 +551,7 @@ export class EvolutionEngine {
             hasPredator = maxPredPower > 0;
           }
         }
-        
+
         if (hasPredator && maxPredPower > 0) {
           const predators = list.filter(c => c.colony.rule.predationPower === maxPredPower);
           if (predators.length === 1) {
@@ -553,8 +610,26 @@ export class EvolutionEngine {
       }
 
       if (winner) {
-        if (terrain && terrain.isWall(winner.x, winner.y)) continue;
-        newMap.set(key, { x: winner.x, y: winner.y, colonyId: winner.cid });
+        const wc = winner.coord;
+        let cx, cy;
+        if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+          cx = wc.col;
+          cy = wc.row;
+        } else {
+          cx = wc.x;
+          cy = wc.y;
+        }
+        if (terrain && terrain.isWall(cx, cy)) continue;
+
+        let cellData;
+        if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+          cellData = { row: wc.row, col: wc.col, dir: wc.dir, x: wc.col, y: wc.row, colonyId: winner.cid };
+        } else if (topology === TOPOLOGY_TYPES.HEXAGONAL) {
+          cellData = { x: wc.x, y: wc.y, q: wc.x, r: wc.y, row: wc.y, col: wc.x, colonyId: winner.cid };
+        } else {
+          cellData = { x: wc.x, y: wc.y, row: wc.y, col: wc.x, colonyId: winner.cid };
+        }
+        newMap.set(key, cellData);
         newCount++;
         newColonyCounts.set(winner.cid, (newColonyCounts.get(winner.cid) || 0) + 1);
       }

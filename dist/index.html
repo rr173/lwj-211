@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>细胞自动机沙盒模拟器</title>
-  <script type="module" crossorigin src="/assets/index-BBTmO4JU.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-DXoydqR3.css">
+  <script type="module" crossorigin src="/assets/index-BVnEh_7O.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-BATdfFbg.css">
 </head>
 <body>
   <div id="app">
@@ -20,6 +20,34 @@
       <div class="panel-tab-content active" data-tab="rules">
         <div class="panel-header">
           <h3>规则与群落</h3>
+        </div>
+        <div class="panel-section">
+          <div class="section-title">网格拓扑</div>
+          <div class="topology-selector">
+            <button class="topology-btn active" data-topology="square" title="正方形网格 (8邻居)">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="4" y="4" width="16" height="16"/>
+                <line x1="12" y1="4" x2="12" y2="20"/>
+                <line x1="4" y1="12" x2="20" y2="12"/>
+              </svg>
+              <span>正方形</span>
+            </button>
+            <button class="topology-btn" data-topology="hexagonal" title="六边形网格 (6邻居)">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12,3 20,7 20,17 12,21 4,17 4,7"/>
+                <polygon points="12,7 16,9 16,15 12,17 8,15 8,9"/>
+              </svg>
+              <span>六边形</span>
+            </button>
+            <button class="topology-btn" data-topology="triangular" title="三角形网格 (3邻居)">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="4,20 12,4 20,20"/>
+                <polygon points="8,18 12,10 16,18"/>
+              </svg>
+              <span>三角形</span>
+            </button>
+          </div>
+          <div id="topology-info" class="hint">正方形: Moore(8邻居) 或 VN(4邻居)</div>
         </div>
         <div class="panel-section">
           <div class="section-title">碰撞策略</div>

@@ -1,4 +1,5 @@
 import { eventBus } from '../core/EventBus.js';
+import { Topology, TOPOLOGY_TYPES } from '../core/Topology.js';
 
 export class InputHandler {
   constructor(canvas, viewState, cellStore, colonyManager, patternManager, historyManager = null, resourceField = null, terrainLayer = null, blueprintManager = null, blueprintPlacer = null) {
@@ -129,6 +130,7 @@ export class InputHandler {
   onMouseDown(e) {
     const pos = this.getMousePos(e);
     const world = this.viewState.screenToWorld(pos.x, pos.y);
+    const topology = Topology.getType();
 
     if (e.button === 1) {
       this.isPanning = true;
@@ -138,7 +140,7 @@ export class InputHandler {
       return;
     }
 
-    if (e.button === 0 && e.shiftKey && this.blueprintManager) {
+    if (e.button === 0 && e.shiftKey && this.blueprintManager && topology === TOPOLOGY_TYPES.SQUARE) {
       this.isSelectingBlueprint = true;
       this.selectionStartX = world.x;
       this.selectionStartY = world.y;
@@ -169,7 +171,7 @@ export class InputHandler {
       return;
     }
 
-    if (this.selectedTerrain !== 'none' && this.terrainLayer) {
+    if (this.selectedTerrain !== 'none' && this.terrainLayer && topology === TOPOLOGY_TYPES.SQUARE) {
       this.isDrawing = true;
       this.drawMode = e.button === 0 ? 'draw' : 'erase';
       this._forkedOnThisDraw = false;
@@ -181,7 +183,7 @@ export class InputHandler {
       this.isDrawing = true;
       this.drawMode = e.button === 0 ? 'draw' : 'erase';
       this._forkedOnThisDraw = false;
-      this.applyDrawAction(world.x, world.y);
+      this.applyDrawActionCoord(world);
     }
   }
 
@@ -217,9 +219,9 @@ export class InputHandler {
 
     if (this.isDrawing) {
       if (this.selectedTerrain !== 'none' && this.terrainLayer) {
-        this.applyTerrainAction(world.x, world.y);
+        this.applyTerrainActionCoord(world);
       } else {
-        this.applyDrawAction(world.x, world.y);
+        this.applyDrawActionCoord(world);
       }
     }
   }
@@ -391,27 +393,52 @@ export class InputHandler {
     eventBus.emit('status:update');
   }
 
-  applyDrawAction(x, y) {
+  applyDrawActionCoord(coord) {
     const colony = this.colonyManager.getSelected();
     if (!colony) return;
 
     this._triggerForkIfNeeded();
 
-    const gx = Math.floor(x);
-    const gy = Math.floor(y);
+    const topology = Topology.getType();
 
     if (this.drawMode === 'draw') {
-      this.cellStore.set(gx, gy, colony.id);
-      if (window.__app?.collabManager) {
-        window.__app.collabManager.recordCellOperation('set', gx, gy, colony.id);
+      if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+        this.cellStore.set(coord.row, coord.col, coord.dir, colony.id);
+        if (window.__app?.collabManager) {
+          window.__app.collabManager.recordCellOperation('set', coord.row, coord.col, coord.dir, colony.id);
+        }
+      } else {
+        const cx = coord.x !== undefined ? coord.x : coord.q || 0;
+        const cy = coord.y !== undefined ? coord.y : coord.r || 0;
+        this.cellStore.set(cx, cy, colony.id);
+        if (window.__app?.collabManager) {
+          window.__app.collabManager.recordCellOperation('set', cx, cy, colony.id);
+        }
       }
     } else if (this.drawMode === 'erase') {
-      this.cellStore.delete(gx, gy);
-      if (window.__app?.collabManager) {
-        window.__app.collabManager.recordCellOperation('delete', gx, gy);
+      if (topology === TOPOLOGY_TYPES.TRIANGULAR) {
+        this.cellStore.delete(coord.row, coord.col, coord.dir);
+        if (window.__app?.collabManager) {
+          window.__app.collabManager.recordCellOperation('delete', coord.row, coord.col, coord.dir);
+        }
+      } else {
+        const cx = coord.x !== undefined ? coord.x : coord.q || 0;
+        const cy = coord.y !== undefined ? coord.y : coord.r || 0;
+        this.cellStore.delete(cx, cy);
+        if (window.__app?.collabManager) {
+          window.__app.collabManager.recordCellOperation('delete', cx, cy);
+        }
       }
     }
     eventBus.emit('state:updated');
+  }
+
+  applyDrawAction(x, y) {
+    this.applyDrawActionCoord({ x, y });
+  }
+
+  applyTerrainActionCoord(coord) {
+    this.applyTerrainAction(coord.x, coord.y);
   }
 
   applyTerrainAction(x, y) {

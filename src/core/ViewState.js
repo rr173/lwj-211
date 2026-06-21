@@ -1,3 +1,5 @@
+import { Topology } from './Topology.js';
+
 export class ViewState {
   constructor() {
     this.zoom = 1;
@@ -10,32 +12,19 @@ export class ViewState {
   }
 
   screenToWorld(screenX, screenY) {
-    return {
-      x: Math.floor((screenX - this.offsetX) / this.zoom),
-      y: Math.floor((screenY - this.offsetY) / this.zoom)
-    };
+    return Topology.screenToWorld(screenX, screenY, this.zoom, this.offsetX, this.offsetY);
   }
 
-  worldToScreen(worldX, worldY) {
-    return {
-      x: worldX * this.zoom + this.offsetX,
-      y: worldY * this.zoom + this.offsetY
-    };
+  worldToScreen(...args) {
+    return Topology.worldToScreen(...args, this.zoom, this.offsetX, this.offsetY);
   }
 
   getVisibleRect() {
-    const topLeft = this.screenToWorld(0, 0);
-    const bottomRight = this.screenToWorld(this.canvasWidth, this.canvasHeight);
-    return {
-      minX: topLeft.x - 1,
-      minY: topLeft.y - 1,
-      maxX: bottomRight.x + 1,
-      maxY: bottomRight.y + 1
-    };
+    return Topology.getVisibleRect(this.canvasWidth, this.canvasHeight, this.zoom, this.offsetX, this.offsetY);
   }
 
   getCenterWorld() {
-    return this.screenToWorld(this.canvasWidth / 2, this.canvasHeight / 2);
+    return Topology.screenToWorld(this.canvasWidth / 2, this.canvasHeight / 2, this.zoom, this.offsetX, this.offsetY);
   }
 
   setZoom(newZoom, screenX = null, screenY = null) {
@@ -64,5 +53,11 @@ export class ViewState {
   resize(width, height) {
     this.canvasWidth = width;
     this.canvasHeight = height;
+  }
+
+  fitToView() {
+    this.zoom = 10;
+    this.offsetX = this.canvasWidth / 2;
+    this.offsetY = this.canvasHeight / 2;
   }
 }
